@@ -1,0 +1,13 @@
+[package]
+name = "lkdots"
+version = "0.1.0"
+edition = "2018"
+
+
+[dependencies]
+serde = { version = "1.0.130",  features = ["derive"] }
+toml = "0.5"
+symlink = "0.1.0"
+permissions = "0.3.0"
+structopt = "0.3"
+lazy_static = "1.4.0"

@@ -1,0 +1,11 @@
+[[entries]]
+from = "Cargo.toml"
+to = "~/lk_test/a/Cargo.toml"
+
+[[entries]]
+from = "src"
+to = "~/lk_test/src"
+
+[[entries]]
+from = "target"
+to = "~/lk_test/a/target"

@@ -20,6 +20,7 @@ pub fn create_symlink(src: &str, dst: &str) -> Result<()> {
             format!("{} is not writable", dst),
         ));
     }
+
     let metadata = get_symbol_meta_data(src)?;
     if metadata.is_dir() {
         symlink::symlink_dir(src, dst)

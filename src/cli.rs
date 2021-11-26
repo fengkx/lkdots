@@ -13,11 +13,11 @@ lazy_static! {
 pub struct Cli {
     /// path to config file
     #[structopt(short = "c", default_value = &LKDOTS_DEFAULT_CONFIG_PATH)]
-    config: String,
+    pub config: String,
 
     /// simulate fs operations, do not actually make any filesystem changes
     #[structopt(long = "simulate")]
-    simulate: bool,
+    pub simulate: bool,
 }
 
 pub fn config() -> Result<Cli> {

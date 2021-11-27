@@ -1,23 +1,56 @@
 [[entries]]
+from = "~/dotfiles/bash"
+to = "~"
+
+[[entries]]
+from = "~/dotfiles/env-files"
+to = "~"
+
+[[entries]]
+from = "~/dotfiles/vscodium"
+to = "~"
+
+[[entries]]
+from = "~/dotfiles/p10k"
+to = "~"
+
+[[entries]]
+from = "~/dotfiles/pip"
+to = "~"
+
+[[entries]]
 from = "~/dotfiles/cargo/.cargo"
 to = "~/.cargo"
 
 [[entries]]
-from = "~/dotfiles/local-bin/.local/bin"
-to = "~/.local/bin"
+from = "~/dotfiles/local-bin"
+to = "~"
 
 [[entries]]
 from = "~/dotfiles/zsh"
 to = "~"
 
 [[entries]]
-from = "~/dotfiles/htop/.config/htop"
-to = "~/.config/htop"
+from = "~/dotfiles/htop"
+to = "~"
 
 [[entries]]
-from = "~/dotfiles/deepin-terminal-gtk/.config/deepin"
-to = "~/.config/deepin"
+from = "~/dotfiles/deepin-terminal-gtk"
+to = "~"
 
 [[entries]]
 from = "~/dotfiles/gitconfig"
 to = "~"
+
+[[entries]]
+from = "~/dotfiles/electron"
+to = "~"
+
+[[entries]]
+from = "~/dotfiles/fcitx5"
+to = "~"
+
+[[entries]]
+from = "~/dotfiles/neofetch"
+to = "~"
+

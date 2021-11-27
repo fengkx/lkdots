@@ -1,11 +1,23 @@
 [[entries]]
-from = "Cargo.toml"
-to = "~/lk_test/a/Cargo.toml"
+from = "~/dotfiles/cargo/.cargo"
+to = "~/.cargo"
 
 [[entries]]
-from = "src"
-to = "~/lk_test/src"
+from = "~/dotfiles/local-bin/.local/bin"
+to = "~/.local/bin"
 
 [[entries]]
-from = "target"
-to = "~/lk_test/a/target"
+from = "~/dotfiles/zsh"
+to = "~"
+
+[[entries]]
+from = "~/dotfiles/htop/.config/htop"
+to = "~/.config/htop"
+
+[[entries]]
+from = "~/dotfiles/deepin-terminal-gtk/.config/deepin"
+to = "~/.config/deepin"
+
+[[entries]]
+from = "~/dotfiles/gitconfig"
+to = "~"

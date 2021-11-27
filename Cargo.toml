@@ -1,8 +1,15 @@
+cargo-features = ["strip"]
+
 [package]
 name = "lkdots"
 version = "0.1.0"
 edition = "2018"
 
+
+[profile.release]
+strip = "symbols"
+opt-level = "s"
+lto = true
 
 [dependencies]
 serde = { version = "1.0.130",  features = ["derive"] }

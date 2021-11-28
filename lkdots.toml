@@ -54,3 +54,7 @@ to = "~"
 from = "~/dotfiles/neofetch"
 to = "~"
 
+[[entries]]
+from = "~/dotfiles/Code-darwin"
+to = "~"
+platforms = ["darwin"]

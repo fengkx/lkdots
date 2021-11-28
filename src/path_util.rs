@@ -1,7 +1,5 @@
-use anyhow::Context;
-use path_clean::PathClean;
+use anyhow::{Context, Result};
 use pathdiff::diff_paths;
-use std::env;
 use std::io::{self, Error, ErrorKind};
 use std::path::{Path, PathBuf};
 
@@ -39,16 +37,7 @@ pub fn relative_path(from: &str, to: &str) -> anyhow::Result<PathBuf> {
     ))
 }
 
-// #[inline]
-// pub fn absolute_path(path: impl AsRef<Path>) -> io::Result<PathBuf> {
-//     let path = path.as_ref();
-
-//     let absolute_path = if path.is_absolute() {
-//         path.to_path_buf()
-//     } else {
-//         env::current_dir()?.join(path)
-//     }
-//     .clean();
-
-//     Ok(absolute_path)
-// }
+#[inline]
+pub fn pathbuf_to_str<'a>(pb: &'a PathBuf) -> Result<&'a str> {
+    pb.to_str().context("path is not valid str")
+}

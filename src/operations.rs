@@ -13,7 +13,7 @@ use std::{
 #[derive(Debug, Clone, PartialEq)]
 pub enum Op {
     Mkdirp(String),
-    Symlink(String, String),
+    Symlink(String, String, String),
 
     Existed(String),
     Conflict(String),
@@ -58,8 +58,9 @@ fn link_file(from: Cow<str>, to: Cow<str>, res: &mut Vec<Op>) -> Result<()> {
     let relative = relative_path(from.as_ref(), to_dir)?;
 
     res.push(Op::Symlink(
-        relative.to_string_lossy().to_string(),
+        from.to_string(),
         to.to_string(),
+        relative.to_string_lossy().to_string(),
     ));
     Ok(())
 }
@@ -75,8 +76,9 @@ fn link_dir(from: Cow<str>, to: Cow<str>, result: &mut Vec<Op>) -> Result<()> {
             result.push(Op::Mkdirp(parent_path.to_str().unwrap().into()));
         }
         result.push(Op::Symlink(
-            relative.to_str().context("Fail to get str path")?.into(),
+            from.into(),
             to.into(),
+            relative.to_str().context("Fail to get str path")?.into(),
         ));
     } else {
         // directory existed, link files in directory
@@ -116,9 +118,9 @@ pub fn excute(ops: &Vec<Op>) -> Result<()> {
                 create_dir_all(p)?;
                 info!("mkdirp: {}", p);
             }
-            Op::Symlink(from, to) => {
-                create_symlink(from, to)?;
-                info!("symbol link: {} -> {}", from, to);
+            Op::Symlink(from, to, relative) => {
+                info!("symbol link: {} -> {} [{}]", from, to, relative);
+                create_symlink(from, to, relative)?;
             }
         }
     }

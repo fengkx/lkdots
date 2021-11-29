@@ -3,12 +3,14 @@ from = "~/dotfiles/bash"
 to = "~"
 
 [[entries]]
-from = "~/dotfiles/env-files"
-to = "~"
+from = "~/dotfiles/env-files/.pam_environment"
+to = "~/.pam_environment"
+platforms = ["linux"]
 
 [[entries]]
 from = "~/dotfiles/vscodium"
 to = "~"
+platforms = ["linux"]
 
 [[entries]]
 from = "~/dotfiles/p10k"
@@ -37,10 +39,12 @@ to = "~"
 [[entries]]
 from = "~/dotfiles/deepin-terminal-gtk"
 to = "~"
+platforms = ["linux"]
 
 [[entries]]
 from = "~/dotfiles/gitconfig"
 to = "~"
+platforms = ["linux"]
 
 [[entries]]
 from = "~/dotfiles/electron"
@@ -49,6 +53,7 @@ to = "~"
 [[entries]]
 from = "~/dotfiles/fcitx5"
 to = "~"
+platforms = ["linux"]
 
 [[entries]]
 from = "~/dotfiles/neofetch"

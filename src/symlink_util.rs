@@ -4,6 +4,8 @@ use std::{
     io::{Error, ErrorKind, Result},
     path::Path,
 };
+use crate::path_util::get_dir;
+
 pub fn get_symbol_meta_data(p: &str) -> Result<Metadata> {
     let p = Path::new(p);
     p.symlink_metadata()
@@ -13,7 +15,7 @@ pub fn get_meta_data(p: &str) -> Result<Metadata> {
     let p = Path::new(p);
     p.metadata()
 }
-pub fn create_symlink(src: &str, dst: &str) -> Result<()> {
+pub fn create_symlink(src: &str, dst: &str, relative: &str) -> Result<()> {
     if !is_creatable(dst)? && !is_writable(dst)? {
         return Err(Error::new(
             ErrorKind::PermissionDenied,
@@ -23,9 +25,9 @@ pub fn create_symlink(src: &str, dst: &str) -> Result<()> {
 
     let metadata = get_symbol_meta_data(src)?;
     if metadata.is_dir() {
-        symlink::symlink_dir(src, dst)
+        symlink::symlink_dir(relative, dst)
     } else {
-        symlink::symlink_file(src, dst)
+        symlink::symlink_file(relative, dst)
     }
 }
 

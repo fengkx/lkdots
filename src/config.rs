@@ -45,6 +45,7 @@ pub struct ConfigFileEntry {
     pub from: String,
     pub to: String,
     pub platforms: Option<Vec<Platfrom>>,
+    pub encrypt: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,6 +60,7 @@ pub struct Entry<'a> {
     pub from: Cow<'a, String>,
     pub to: Cow<'a, String>,
     pub platforms: Cow<'a, Vec<Platfrom>>,
+    pub encrypt: bool,
 }
 
 impl<'a> Entry<'a> {
@@ -100,6 +102,7 @@ impl From<ConfigFileStruct> for Config<'static> {
                         Platfrom::Darwin,
                         Platfrom::Window,
                     ])),
+                    encrypt: e.encrypt.unwrap_or(false),
                 })
                 .collect(),
         }

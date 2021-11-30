@@ -24,9 +24,17 @@ fn main() -> Result<()> {
     let config: Config = toml::from_str::<ConfigFileStruct>(&cfg_str)?.into();
     debug!("{:?}", config);
     let base_dir = get_dir(Path::new(&cfg.config))?;
+    let entries = config.entries;
 
-    let r = config
-        .entries
+    if cfg.is_encrypt_cmd() {
+        return entries.par_iter().filter(|e| e.encrypt);
+        .map(|e| {
+            
+        })
+        .collect();
+    }
+
+    let r = entries
         .par_iter()
         .filter(|e| e.match_platform())
         .map(|cfg| cfg.create_ops(base_dir));

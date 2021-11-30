@@ -1,65 +1,70 @@
 [[entries]]
-from = "~/dotfiles/bash"
-to = "~"
+from = "~/dotfiles/ssh"
+to = "~/.ssh"
+encrypt = true
 
-[[entries]]
-from = "~/dotfiles/env-files/.pam_environment"
-to = "~/.pam_environment"
-platforms = ["linux"]
+# [[entries]]
+# from = "~/dotfiles/bash"
+# to = "~"
 
-[[entries]]
-from = "~/dotfiles/vscodium"
-to = "~"
-platforms = ["linux"]
+# [[entries]]
+# from = "~/dotfiles/env-files/.pam_environment"
+# to = "~/.pam_environment"
+# platforms = ["linux"]
 
-[[entries]]
-from = "~/dotfiles/p10k"
-to = "~"
+# [[entries]]
+# from = "~/dotfiles/vscodium"
+# to = "~"
+# platforms = ["linux"]
 
-[[entries]]
-from = "~/dotfiles/pip"
-to = "~"
+# [[entries]]
+# from = "~/dotfiles/p10k"
+# to = "~"
 
-[[entries]]
-from = "~/dotfiles/cargo/.cargo"
-to = "~/.cargo"
+# [[entries]]
+# from = "~/dotfiles/pip"
+# to = "~"
 
-[[entries]]
-from = "~/dotfiles/local-bin"
-to = "~"
+# [[entries]]
+# from = "~/dotfiles/cargo/.cargo"
+# to = "~/.cargo"
 
-[[entries]]
-from = "~/dotfiles/zsh"
-to = "~"
+# [[entries]]
+# from = "~/dotfiles/local-bin"
+# to = "~"
 
-[[entries]]
-from = "~/dotfiles/htop"
-to = "~"
+# [[entries]]
+# from = "~/dotfiles/zsh"
+# to = "~"
 
-[[entries]]
-from = "~/dotfiles/deepin-terminal-gtk"
-to = "~"
-platforms = ["linux"]
+# [[entries]]
+# from = "~/dotfiles/htop"
+# to = "~"
 
-[[entries]]
-from = "~/dotfiles/gitconfig"
-to = "~"
-platforms = ["linux"]
+# [[entries]]
+# from = "~/dotfiles/deepin-terminal-gtk"
+# to = "~"
+# platforms = ["linux"]
 
-[[entries]]
-from = "~/dotfiles/electron"
-to = "~"
+# [[entries]]
+# from = "~/dotfiles/gitconfig"
+# to = "~"
+# platforms = ["linux"]
 
-[[entries]]
-from = "~/dotfiles/fcitx5"
-to = "~"
-platforms = ["linux"]
+# [[entries]]
+# from = "~/dotfiles/electron"
+# to = "~"
 
-[[entries]]
-from = "~/dotfiles/neofetch"
-to = "~"
+# [[entries]]
+# from = "~/dotfiles/fcitx5"
+# to = "~"
+# platforms = ["linux"]
 
-[[entries]]
-from = "~/dotfiles/Code-darwin"
-to = "~"
-platforms = ["darwin"]
+# [[entries]]
+# from = "~/dotfiles/neofetch"
+# to = "~"
+
+# [[entries]]
+# from = "~/dotfiles/Code-darwin"
+# to = "~"
+# platforms = ["darwin"]

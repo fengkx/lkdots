@@ -18,10 +18,28 @@ pub struct Cli {
     /// simulate fs operations, do not actually make any filesystem changes
     #[structopt(long = "simulate")]
     pub simulate: bool,
+
+    #[structopt(subcommand)]
+    pub cmd: Option<SubCommand>,
+}
+
+impl Cli {
+    pub fn is_encrypt_cmd(&self) -> bool {
+        match self.cmd.as_ref() {
+            Some(SubCommand::Encrypt) => true,
+            None => false,
+        }
+    }
+}
+
+#[derive(StructOpt, PartialEq, Debug)]
+pub enum SubCommand {
+    Encrypt,
 }
 
 pub fn config() -> Result<Cli> {
     let args = Cli::from_args();
+    println!("{:?}", args);
     Ok(args)
 }
 

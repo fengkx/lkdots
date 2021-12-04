@@ -26,19 +26,6 @@ pub fn create_symlink(src: &str, dst: &str, relative: &str) -> Result<()> {
     }
 }
 
-pub fn remove_symlink(p: &str) -> Result<()> {
-    let metadata = get_symbol_meta_data(p)?;
-    if !metadata.is_symlink() {
-        return Err(Error::new(ErrorKind::InvalidInput, "not a symbol link"));
-    }
-    let metadata = Path::new(p).metadata()?;
-    if metadata.is_dir() {
-        symlink::remove_symlink_dir(p)
-    } else {
-        symlink::remove_symlink_file(p)
-    }
-}
-
 #[test]
 fn test_get_metadata() {
     let metadata = get_symbol_meta_data("/etc/passwd").unwrap();

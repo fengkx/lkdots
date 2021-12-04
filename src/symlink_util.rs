@@ -4,17 +4,12 @@ use std::{
     io::{Error, ErrorKind, Result},
     path::Path,
 };
-use crate::path_util::get_dir;
 
 pub fn get_symbol_meta_data(p: &str) -> Result<Metadata> {
     let p = Path::new(p);
     p.symlink_metadata()
 }
 
-pub fn get_meta_data(p: &str) -> Result<Metadata> {
-    let p = Path::new(p);
-    p.metadata()
-}
 pub fn create_symlink(src: &str, dst: &str, relative: &str) -> Result<()> {
     if !is_creatable(dst)? && !is_writable(dst)? {
         return Err(Error::new(
@@ -36,7 +31,7 @@ pub fn remove_symlink(p: &str) -> Result<()> {
     if !metadata.is_symlink() {
         return Err(Error::new(ErrorKind::InvalidInput, "not a symbol link"));
     }
-    let metadata = get_meta_data(p)?;
+    let metadata = Path::new(p).metadata()?;
     if metadata.is_dir() {
         symlink::remove_symlink_dir(p)
     } else {

@@ -3,20 +3,6 @@ use pathdiff::diff_paths;
 use std::io::{self, Error, ErrorKind};
 use std::path::{Path, PathBuf};
 
-pub fn find_existed_up(p: &str) -> Option<&Path> {
-    let mut p = Path::new(p);
-    if p.exists() {
-        return Some(p);
-    }
-    while let Some(parent) = p.parent() {
-        if parent.exists() {
-            return Some(parent);
-        }
-        p = parent;
-    }
-    return None;
-}
-
 pub fn get_dir(p: &Path) -> io::Result<&Path> {
     let metadata = p.metadata()?;
     if metadata.is_dir() {

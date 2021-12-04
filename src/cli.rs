@@ -27,6 +27,14 @@ impl Cli {
     pub fn is_encrypt_cmd(&self) -> bool {
         match self.cmd.as_ref() {
             Some(SubCommand::Encrypt) => true,
+            Some(SubCommand::Decrypt) => false,
+            None => false,
+        }
+    }
+    pub fn is_decrypt_cmd(&self) -> bool {
+        match self.cmd.as_ref() {
+            Some(SubCommand::Encrypt) => false,
+            Some(SubCommand::Decrypt) => true,
             None => false,
         }
     }
@@ -34,7 +42,10 @@ impl Cli {
 
 #[derive(StructOpt, PartialEq, Debug)]
 pub enum SubCommand {
+    /// encrypt files to *.enc
     Encrypt,
+    /// decrypt files original position
+    Decrypt,
 }
 
 pub fn config() -> Result<Cli> {

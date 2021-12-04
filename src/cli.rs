@@ -5,7 +5,10 @@ use structopt::StructOpt;
 lazy_static! {
     static ref LKDOTS_DEFAULT_CONFIG_PATH: String = current_dir()
         .map(|p| { p.join("lkdots.toml") })
-        .map(|p| { p.to_str().unwrap().clone().to_owned() })
+        .map(|p| {
+            let pt = p.to_str().unwrap();
+            pt.to_owned()
+        })
         .expect("Fail to found current dir");
 }
 

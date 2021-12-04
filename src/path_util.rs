@@ -24,6 +24,6 @@ pub fn relative_path(from: &str, to: &str) -> anyhow::Result<PathBuf> {
 }
 
 #[inline]
-pub fn pathbuf_to_str<'a>(pb: &'a PathBuf) -> Result<&'a str> {
+pub fn pathbuf_to_str(pb: &Path) -> Result<&str> {
     pb.to_str().context("path is not valid str")
 }

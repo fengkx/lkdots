@@ -58,11 +58,9 @@ fn main() -> Result<()> {
                                 info!("encrypt: {}", path.as_ref());
                                 encrypt_file(path.as_ref(), &phrase)?;
                             }
-                        } else if cfg.is_decrypt_cmd() {
-                            if path.as_ref().ends_with(".enc") {
-                                info!("decrypt: {}", path.as_ref());
-                                decrypt_file(path.as_ref(), &phrase)?;
-                            }
+                        } else if cfg.is_decrypt_cmd() && path.as_ref().ends_with(".enc") {
+                            info!("decrypt: {}", path.as_ref());
+                            decrypt_file(path.as_ref(), &phrase)?;
                         }
                     }
                 }

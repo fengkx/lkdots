@@ -4,7 +4,7 @@ use log::debug;
 use serde::{Deserialize, Serialize};
 use std::{borrow::Cow, ffi::OsString, path::Path};
 
-pub const PLATFORM: &'static str = if cfg!(target_os = "linux") {
+pub const PLATFORM: &str = if cfg!(target_os = "linux") {
     "linux"
 } else if cfg!(target_os = "windows") {
     "window"
@@ -65,7 +65,7 @@ pub struct Entry<'a> {
 
 impl<'a> Entry<'a> {
     pub fn create_ops(&self, base_dir: &Path) -> Result<Vec<Op>> {
-        let from_osstr: OsString = if self.from.starts_with("/") || self.from.starts_with("~") {
+        let from_osstr: OsString = if self.from.starts_with('/') || self.from.starts_with('~') {
             self.from.as_ref().into()
         } else {
             base_dir.join(&self.from.as_ref()).into_os_string()
@@ -97,11 +97,9 @@ impl From<ConfigFileStruct> for Config<'static> {
                 .map(|e| Entry {
                     from: Cow::Owned(e.from),
                     to: Cow::Owned(e.to),
-                    platforms: Cow::Owned(e.platforms.unwrap_or(vec![
-                        Platfrom::Linux,
-                        Platfrom::Darwin,
-                        Platfrom::Window,
-                    ])),
+                    platforms: Cow::Owned(e.platforms.unwrap_or_else(|| {
+                        vec![Platfrom::Linux, Platfrom::Darwin, Platfrom::Window]
+                    })),
                     encrypt: e.encrypt.unwrap_or(false),
                 })
                 .collect(),

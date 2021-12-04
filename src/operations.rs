@@ -22,20 +22,16 @@ pub enum Op {
 
 pub fn link_file_or_dir(from: Cow<str>, to: Cow<str>, result: &mut Vec<Op>) -> Result<()> {
     let metadata = Path::new(to.as_ref()).symlink_metadata();
-    if metadata.is_ok() && !metadata.as_ref().unwrap().is_dir() {
+    if let Ok(metadata) = metadata {
         // file existed
-        let metadata = metadata.unwrap();
         if metadata.is_symlink() {
             let sym_target = std::fs::canonicalize(to.as_ref());
-            match sym_target {
-                Err(ref err) => {
-                    if err.kind() == ErrorKind::NotFound {
-                        result.push(Op::Conflict(to.to_string()));
-                        return Ok(());
-                    }
+            if let Err(err) = sym_target.as_ref() {
+                if err.kind() == ErrorKind::NotFound {
+                    result.push(Op::Conflict(to.to_string()));
+                    return Ok(());
                 }
-                Ok(_) => {}
-            };
+            }
             let sym_target = sym_target?;
             let sym_target = sym_target.to_str().context("Fail to get str path")?;
             let abs_from = std::fs::canonicalize(from.as_ref())?;
@@ -91,7 +87,7 @@ fn link_dir(from: Cow<str>, to: Cow<str>, result: &mut Vec<Op>) -> Result<()> {
     let to_path = Path::new(to.as_ref());
     if !to_path.exists() {
         // create_dir_all(to_path.parent().unwrap_or(Path::new("/")))?;
-        let parent_path = to_path.parent().unwrap_or(Path::new("/"));
+        let parent_path = to_path.parent().unwrap_or_else(|| Path::new("/"));
         if !parent_path.exists() {
             result.push(Op::Mkdirp(parent_path.to_str().unwrap().into()));
         }
@@ -102,7 +98,7 @@ fn link_dir(from: Cow<str>, to: Cow<str>, result: &mut Vec<Op>) -> Result<()> {
         ));
     } else {
         // directory existed, link files in directory
-        for f in read_dir(from.as_ref())?.into_iter() {
+        for f in read_dir(from.as_ref())? {
             let f = f?;
             let from_path = f.path().to_path_buf();
             let from_str = pathbuf_to_str(&from_path)?;
@@ -121,14 +117,11 @@ fn link_dir(from: Cow<str>, to: Cow<str>, result: &mut Vec<Op>) -> Result<()> {
     Ok(())
 }
 
-pub fn excute(ops: &Vec<Op>) -> Result<()> {
+pub fn excute(ops: &[Op]) -> Result<()> {
     let mut conflicts = vec![];
     for op in ops {
-        match op {
-            Op::Conflict(p) => {
-                conflicts.push(p);
-            }
-            _ => {}
+        if let Op::Conflict(p) = op {
+            conflicts.push(p);
         }
     }
 

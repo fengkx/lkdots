@@ -1,3 +1,4 @@
+use log::debug;
 use std::{env::current_dir, io::Result};
 use structopt::StructOpt;
 
@@ -42,15 +43,15 @@ impl Cli {
 
 #[derive(StructOpt, PartialEq, Debug)]
 pub enum SubCommand {
-    /// encrypt files to *.enc
+    /// encrypt files to *.enc file
     Encrypt,
-    /// decrypt files original position
+    /// decrypt files to original position
     Decrypt,
 }
 
 pub fn config() -> Result<Cli> {
     let args = Cli::from_args();
-    println!("{:?}", args);
+    debug!("{:?}", args);
     Ok(args)
 }
 

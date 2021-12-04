@@ -68,3 +68,9 @@ to = "~"
 from = "~/dotfiles/Code-darwin"
 to = "~"
 platforms = ["darwin"]
+
+[[entries]]
+from = "~/dotfiles/rclone"
+to = "~/.config/rclone"
+platforms = ["linux"]
+encrypt = true

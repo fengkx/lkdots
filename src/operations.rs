@@ -50,6 +50,9 @@ pub fn link_file_or_dir(from: Cow<str>, to: Cow<str>, result: &mut Vec<Op>) -> R
 }
 
 fn link_file(from: Cow<str>, to: Cow<str>, res: &mut Vec<Op>) -> Result<()> {
+    if from.ends_with(".enc") {
+        return Ok(());
+    }
     let to_dir = Path::new(to.as_ref())
         .parent()
         .context("Not parent dir")?

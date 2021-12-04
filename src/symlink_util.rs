@@ -33,8 +33,8 @@ fn test_get_metadata() {
     let metadata = get_symbol_meta_data("/etc").unwrap();
     assert!(metadata.is_dir());
     assert!(get_symbol_meta_data("/etc/localtime").unwrap().is_symlink());
-    assert!(!get_meta_data("/etc/localtime").unwrap().is_symlink());
-    assert!(get_meta_data("/etc/localtime").unwrap().is_file());
+    assert!(!Path::new("/etc/localtime").metadata().unwrap().is_symlink());
+    assert!(Path::new("/etc/localtime").metadata().unwrap().is_file());
 }
 
 #[test]

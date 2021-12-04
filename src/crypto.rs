@@ -34,3 +34,22 @@ pub fn decrypt_file(src: &str, passphrase: &str) -> Result<()> {
     io::copy(&mut reader, &mut decrypted)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_crypto() {
+        let passphrase = "abc";
+        let p = "./tests/test-data/private.key";
+        let original = std::fs::read_to_string(p).unwrap();
+        let encrypted_path = format!("{}.enc", p);
+        encrypt_file(p, passphrase).unwrap();
+        decrypt_file(&encrypted_path, passphrase).unwrap();
+        let encrypted_str = std::fs::read_to_string(encrypted_path).unwrap_or("".to_string());
+        let decrypted_str = std::fs::read_to_string(p).unwrap();
+        assert_eq!(original, decrypted_str);
+        assert_ne!(original, encrypted_str)
+    }
+}

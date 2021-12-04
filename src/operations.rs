@@ -41,6 +41,8 @@ pub fn link_file_or_dir(from: Cow<str>, to: Cow<str>, result: &mut Vec<Op>) -> R
             } else {
                 result.push(Op::Existed(to.to_string()));
             }
+        } else if metadata.is_dir() {
+            link_dir(from, to, result)?;
         } else {
             result.push(Op::Conflict(to.to_string()));
         }
@@ -76,7 +78,8 @@ fn link_file(from: Cow<str>, to: Cow<str>, res: &mut Vec<Op>) -> Result<()> {
 
 fn link_dir(from: Cow<str>, to: Cow<str>, result: &mut Vec<Op>) -> Result<()> {
     let relative = {
-        let to_dir = Path::new(to.as_ref())
+        let to_path = Path::new(to.as_ref());
+        let to_dir = to_path
             .parent()
             .context("Not parent dir")?
             .to_str()

@@ -76,8 +76,10 @@ fn main() -> Result<()> {
         .filter(|e| e.match_platform())
         .map(|cfg| cfg.create_ops(base_dir));
     let opss = r.collect::<Result<Vec<Vec<Op>>>>().unwrap();
-    debug!("{:?}", opss);
-    if !cfg.simulate {
+
+    if cfg.simulate {
+        println!("{:?}", opss);
+    } else {
         opss.par_iter()
             .map(|ops| -> Result<()> { excute(ops) })
             .collect::<Result<()>>()?;

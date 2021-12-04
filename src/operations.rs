@@ -7,6 +7,7 @@ use log::info;
 use std::{
     borrow::Cow,
     fs::{create_dir_all, read_dir},
+    io::ErrorKind,
     path::Path,
 };
 
@@ -25,12 +26,21 @@ pub fn link_file_or_dir(from: Cow<str>, to: Cow<str>, result: &mut Vec<Op>) -> R
         // file existed
         let metadata = metadata.unwrap();
         if metadata.is_symlink() {
-            let sym_target = std::fs::canonicalize(to.as_ref())?;
+            let sym_target = std::fs::canonicalize(to.as_ref());
+            match sym_target {
+                Err(ref err) => {
+                    if err.kind() == ErrorKind::NotFound {
+                        result.push(Op::Conflict(to.to_string()));
+                        return Ok(());
+                    }
+                }
+                Ok(_) => {}
+            };
+            let sym_target = sym_target?;
             let sym_target = sym_target.to_str().context("Fail to get str path")?;
             let abs_from = std::fs::canonicalize(from.as_ref())?;
             let abs_from = abs_from.to_str().context("Fail to get str path")?;
             if sym_target != abs_from {
-                println!("{}\n{}", sym_target, sym_target);
                 result.push(Op::Conflict(to.to_string()));
             } else {
                 result.push(Op::Existed(to.to_string()));
@@ -69,8 +79,15 @@ fn link_file(from: Cow<str>, to: Cow<str>, res: &mut Vec<Op>) -> Result<()> {
 }
 
 fn link_dir(from: Cow<str>, to: Cow<str>, result: &mut Vec<Op>) -> Result<()> {
-    let relative = relative_path(from.as_ref(), to.as_ref())?;
+    let relative = {
+        let to_dir = Path::new(to.as_ref())
+            .parent()
+            .context("Not parent dir")?
+            .to_str()
+            .context("Fail to get str path")?;
 
+        relative_path(from.as_ref(), to_dir)?
+    };
     let to_path = Path::new(to.as_ref());
     if !to_path.exists() {
         // create_dir_all(to_path.parent().unwrap_or(Path::new("/")))?;
@@ -105,6 +122,25 @@ fn link_dir(from: Cow<str>, to: Cow<str>, result: &mut Vec<Op>) -> Result<()> {
 }
 
 pub fn excute(ops: &Vec<Op>) -> Result<()> {
+    let mut conflicts = vec![];
+    for op in ops {
+        match op {
+            Op::Conflict(p) => {
+                conflicts.push(p);
+            }
+            _ => {}
+        }
+    }
+
+    if !conflicts.is_empty() {
+        let err_log = conflicts
+            .iter()
+            .map(|&p| format!("{} is existed and conlict to your configuration", p))
+            .collect::<Vec<_>>()
+            .join("\n");
+        return Err(anyhow!(err_log));
+    }
+
     for op in ops {
         match op {
             Op::Existed(p) => {

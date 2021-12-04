@@ -23,7 +23,7 @@ to = "~"
 
 [[entries]]
 from = "~/dotfiles/pip"
-to = "~"
+to = "~/.config/pip"
 
 [[entries]]
 from = "~/dotfiles/cargo/.cargo"

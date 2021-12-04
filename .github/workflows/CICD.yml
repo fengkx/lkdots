@@ -88,7 +88,7 @@ jobs:
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
+          toolchain: nightly
           target: ${{ matrix.job.target }}
           override: true
           profile: minimal # minimal component installation (ie, no documentation)
@@ -102,6 +102,15 @@ jobs:
           rustup default
           cargo -V
           rustc -V
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Build
         uses: actions-rs/cargo@v1
         with:

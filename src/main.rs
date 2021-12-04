@@ -12,7 +12,7 @@ use operations::Op;
 use path_util::get_dir;
 use rayon::prelude::*;
 use rpassword::prompt_password_stdout;
-use std::{fs::read_to_string, path::Path};
+use std::{fs::read_to_string, io::ErrorKind, path::Path};
 use walkdir::WalkDir;
 
 use crate::{
@@ -26,10 +26,17 @@ extern crate lazy_static;
 
 fn main() -> Result<()> {
     env_logger::init();
+
     let cfg = cli::config()?;
-    let cfg_str = read_to_string(&cfg.config)?;
-    let config: Config = toml::from_str::<ConfigFileStruct>(&cfg_str)?.into();
-    debug!("{:?}", config);
+    let cfg_str = read_to_string(&cfg.config);
+    if let Err(err) = cfg_str {
+        debug!("{}", err);
+        if err.kind() == ErrorKind::NotFound {
+            return Err(anyhow!("Cannot found config toml (default: lkdots.toml)"));
+        }
+        return Err(anyhow!(err));
+    }
+    let config: Config = toml::from_str::<ConfigFileStruct>(&cfg_str?)?.into();
     let base_dir = get_dir(Path::new(&cfg.config))?;
     let entries = config.entries;
 

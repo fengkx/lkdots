@@ -51,6 +51,7 @@ pub struct ConfigFileEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfigFileStruct {
     pub entries: Vec<ConfigFileEntry>,
+    pub gitignore: String,
 }
 
 // END serde
@@ -86,11 +87,13 @@ impl<'a> Entry<'a> {
 #[derive(Debug, Clone)]
 pub struct Config<'a> {
     pub entries: Vec<Entry<'a>>,
+    pub gitignore: String,
 }
 
 impl From<ConfigFileStruct> for Config<'static> {
     fn from(c: ConfigFileStruct) -> Self {
         Config {
+            gitignore: c.gitignore,
             entries: c
                 .entries
                 .into_iter()

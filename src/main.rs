@@ -5,14 +5,19 @@ mod operations;
 mod path_util;
 mod symlink_util;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use config::ConfigFileStruct;
 use log::{debug, info};
 use operations::Op;
-use path_util::get_dir;
+use path_util::{get_dir, pathbuf_to_str, relative_path};
 use rayon::prelude::*;
 use rpassword::prompt_password_stdout;
-use std::{fs::read_to_string, io::ErrorKind, path::Path};
+use std::{
+    collections::HashMap,
+    fs::{read_to_string, OpenOptions},
+    io::{BufRead, ErrorKind, Write},
+    path::Path,
+};
 use walkdir::WalkDir;
 
 use crate::{
@@ -38,7 +43,7 @@ fn main() -> Result<()> {
     }
     let config: Config = toml::from_str::<ConfigFileStruct>(&cfg_str?)?.into();
     let base_dir = get_dir(Path::new(&cfg.config))?;
-    let entries = config.entries;
+    let entries = &config.entries;
 
     if cfg.is_encrypt_cmd() || cfg.is_decrypt_cmd() {
         let phrase = prompt_password_stdout("Passphrase: ")?;
@@ -89,5 +94,55 @@ fn main() -> Result<()> {
             .map(|ops| -> Result<()> { excute(ops) })
             .collect::<Result<()>>()?;
     }
+    write_gitignore(&config, cfg.simulate)?;
+    Ok(())
+}
+
+fn write_gitignore(cfg: &Config, simulate: bool) -> Result<()> {
+    let gitignore_path = shellexpand::tilde(&cfg.gitignore);
+    let dir = pathbuf_to_str(
+        Path::new(gitignore_path.as_ref())
+            .parent()
+            .context("Fail to get git repository root")?,
+    )?;
+
+    let mut has_written = HashMap::new();
+    let mut f = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(gitignore_path.as_ref())?;
+    let reader = std::io::BufReader::new(&f);
+    let lines = reader.lines();
+    for line in lines {
+        if let Ok(line) = line {
+            has_written.insert(line, true);
+        }
+    }
+
+    cfg.entries
+        .iter()
+        .filter(|&e| e.encrypt)
+        .map(|e| {
+            format!(
+                "{}",
+                relative_path(shellexpand::tilde(e.from.as_ref()).as_ref(), dir)
+                    .unwrap()
+                    .to_string_lossy()
+            )
+        })
+        .flat_map(|p| vec![format!("{}/*", p), format!("!{}/*.enc", p)])
+        .for_each(|s| {
+            if let None = has_written.get(&s) {
+                if simulate {
+                    println!("{}", s);
+                } else {
+                    writeln!(f, "{}", s)
+                        .context("Fail to write gitignore")
+                        .unwrap();
+                }
+            }
+        });
+
     Ok(())
 }

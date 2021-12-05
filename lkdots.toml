@@ -1,3 +1,5 @@
+gitignore = "~/dotfiles/.gitignore"
+
 [[entries]]
 from = "~/dotfiles/ssh"
 to = "~/.ssh"

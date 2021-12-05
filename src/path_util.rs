@@ -10,7 +10,10 @@ pub fn get_dir(p: &Path) -> io::Result<&Path> {
     } else {
         match p.parent() {
             Some(p) => Ok(p),
-            None => Err(Error::new(ErrorKind::NotFound, "No parent dir")),
+            None => Err(Error::new(
+                ErrorKind::NotFound,
+                format!("No parent dir on {:?}", p),
+            )),
         }
     }
 }

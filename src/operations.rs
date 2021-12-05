@@ -20,6 +20,21 @@ pub enum Op {
     Conflict(String),
 }
 
+impl std::fmt::Display for Op {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Op::Mkdirp(p) => write!(f, "create dir {}", p),
+            Op::Symlink(from, to, relative) => write!(
+                f,
+                "create symbol link {} -> {} relative: {}",
+                from, to, relative
+            ),
+            Op::Existed(p) => write!(f, "{} is existed", p),
+            Op::Conflict(p) => write!(f, "{} is existed and conflicted", p),
+        }
+    }
+}
+
 pub fn link_file_or_dir(from: Cow<str>, to: Cow<str>, result: &mut Vec<Op>) -> Result<()> {
     let metadata = Path::new(to.as_ref()).symlink_metadata();
     if let Ok(metadata) = metadata {

@@ -88,7 +88,17 @@ fn main() -> Result<()> {
     let opss = r.collect::<Result<Vec<Vec<Op>>>>().unwrap();
 
     if cfg.simulate {
-        println!("{:?}", opss);
+        let output = opss
+            .iter()
+            .map(|ops| {
+                ops.iter()
+                    .map(|op| format!("{}", op))
+                    .collect::<Vec<String>>()
+                    .join("\n")
+            })
+            .collect::<Vec<String>>()
+            .join("\n");
+        println!("{}", output);
     } else {
         opss.par_iter()
             .map(|ops| -> Result<()> { excute(ops) })
@@ -114,10 +124,8 @@ fn write_gitignore(cfg: &Config, simulate: bool) -> Result<()> {
         .open(gitignore_path.as_ref())?;
     let reader = std::io::BufReader::new(&f);
     let lines = reader.lines();
-    for line in lines {
-        if let Ok(line) = line {
-            has_written.insert(line, true);
-        }
+    for line in lines.flatten() {
+        has_written.insert(line, true);
     }
 
     cfg.entries
@@ -133,7 +141,7 @@ fn write_gitignore(cfg: &Config, simulate: bool) -> Result<()> {
         })
         .flat_map(|p| vec![format!("{}/*", p), format!("!{}/*.enc", p)])
         .for_each(|s| {
-            if let None = has_written.get(&s) {
+            if has_written.get(&s).is_none() {
                 if simulate {
                     println!("{}", s);
                 } else {

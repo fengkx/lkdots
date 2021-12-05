@@ -13,7 +13,8 @@ lazy_static! {
 }
 
 #[derive(PartialEq, StructOpt, Debug)]
-/// Cli
+/// A cli tool to create symbol link of dotfiles with encryption and more
+
 pub struct Cli {
     /// path to config file
     #[structopt(short = "c", default_value = &LKDOTS_DEFAULT_CONFIG_PATH)]

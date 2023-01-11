@@ -729,9 +729,9 @@ checksum = "d4fd5641d01c8f18a23da7b6fe29298ff4b55afcccdf78973b24cf3175fee32e"
 
 [[package]]
 name = "permissions"
-version = "0.3.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96cabf601e36de083e58fb7b90b4d392ce7beea9ccb79a7d56e099bb8f9542f0"
+checksum = "cc3df056ab7701738f83b96e4852cef8bbad33b417fe42cbf5fc11f77753b2dc"
 dependencies = [
  "libc",
 ]

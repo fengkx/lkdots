@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Install latest nightly
         uses: actions-rs/toolchain@v1
         with:
@@ -70,7 +70,7 @@ jobs:
           # - { os: windows-2019, target: x86_64-pc-windows-msvc }
     steps:
       - name: Checkout source code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Install prerequisites
         shell: bash
@@ -102,7 +102,7 @@ jobs:
           rustup default
           cargo -V
           rustc -V
-      - uses: actions/cache@v2
+      - uses: actions/cache@v3
         with:
           path: |
             ~/.cargo/bin/

@@ -76,11 +76,17 @@ fn link_file(from: Cow<str>, to: Cow<str>, res: &mut Vec<Op>) -> Result<()> {
     if from.ends_with(".enc") {
         return Ok(());
     }
-    let to_dir = Path::new(to.as_ref())
+    let parent_dir = Path::new(to.as_ref())
         .parent()
-        .context("Not parent dir")?
+        .context("Not parent dir")?;
+    let to_dir = 
+        parent_dir
         .to_str()
         .context("Fail to get str path")?;
+    
+    if !parent_dir.exists() {
+        res.push(Op::Mkdirp(to_dir.into()));
+    }
     let relative = relative_path(from.as_ref(), to_dir)?;
 
     res.push(Op::Symlink(

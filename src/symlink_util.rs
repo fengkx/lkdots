@@ -30,7 +30,7 @@ pub fn create_symlink(src: &str, dst: &str, relative: &str) -> Result<()> {
 fn test_get_metadata() {
     let metadata = get_symbol_meta_data("/etc/passwd").unwrap();
     assert!(metadata.is_file());
-    let metadata = get_symbol_meta_data("/bin").unwrap();
+    let metadata = get_symbol_meta_data("./tests/test-data").unwrap();
     assert!(metadata.is_dir());
 
     assert!(get_symbol_meta_data("/etc/localtime").unwrap().is_symlink());

@@ -3,6 +3,8 @@ use age::secrecy::Secret;
 use anyhow::Result;
 use log::debug;
 use std::fs::OpenOptions;
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 use std::io;
 
 pub fn encrypt_file(src: &str, passphrase: &str) -> Result<()> {
@@ -26,10 +28,19 @@ pub fn decrypt_file(src: &str, passphrase: &str) -> Result<()> {
         _ => unreachable!(),
     };
 
-    let mut decrypted = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .open(strip_fname)?;
+    let mut decrypted = {
+        let mut op = OpenOptions::new();
+
+        op.create(true)
+        .write(true);
+
+        if cfg!(unix) {
+            op.mode(0o600);
+        }
+        let file = op.open(strip_fname)?;
+        file
+    };
+        
     let mut reader = decryptor.decrypt(&Secret::new(passphrase.to_owned()), None)?;
     io::copy(&mut reader, &mut decrypted)?;
     Ok(())

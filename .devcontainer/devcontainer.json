@@ -4,6 +4,9 @@
     "postCreateCommand": "bash .devcontainer/postCreate.sh",
     "customizations": {
         "vscode": {
+            "extensions": [
+                "rust-lang.rust-analyzer"
+            ],
             "settings": {
                 "terminal.integrated.defaultProfile.linux": "zsh",
                 "terminal.integrated.fontFamily": "MesloLGS NF,Menlo , Monaco, 'Courier New', monospace"

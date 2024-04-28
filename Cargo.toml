@@ -2,7 +2,7 @@ cargo-features = ["strip"]
 
 [package]
 name = "lkdots"
-version = "0.0.4"
+version = "0.0.6"
 edition = "2021"
 authors = ["fengkx <liangkx8237@gmail.com>"]
 

@@ -1,6 +1,7 @@
+use age::armor::{ArmoredReader, ArmoredWriter, Format};
 use age::cli_common::file_io::{OutputFormat, OutputWriter};
 use age::secrecy::SecretString;
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use log::debug;
 use std::fs::OpenOptions;
 use std::io;
@@ -18,10 +19,11 @@ pub fn encrypt_file(src: &str, passphrase: &SecretString) -> Result<()> {
         0o644,
         false, // input_is_tty
     )?;
-    let mut writer = encryptor.wrap_output(writer)?;
+    let armored = ArmoredWriter::wrap_output(writer, Format::AsciiArmor)?;
+    let mut writer = encryptor.wrap_output(armored)?;
 
     io::copy(&mut reader, &mut writer)?;
-    writer.finish()?;
+    writer.finish()?.finish()?;
 
     Ok(())
 }
@@ -42,18 +44,31 @@ pub fn decrypt_file(src: &str, passphrase: &SecretString) -> Result<()> {
         .to_str()
         .ok_or_else(|| anyhow!("Invalid path encoding"))?;
 
-    let encrypted_file = OpenOptions::new().create(false).read(true).open(src)?;
-    let decryptor = age::Decryptor::new(encrypted_file)?;
+    let encrypted_file = OpenOptions::new()
+        .create(false)
+        .read(true)
+        .open(src)
+        .with_context(|| format!("Failed to open encrypted file for reading: {}", src))?;
+    // ArmoredReader auto-detects whether the input is ASCII-armored or binary age format.
+    let decryptor = age::Decryptor::new(ArmoredReader::new(encrypted_file))?;
+
+    debug!("decrypting file: {} to {}", src, strip_fname);
 
     let mut decrypted = {
         let mut op = OpenOptions::new();
 
-        op.create(true).write(true);
+        // Overwrite the target file contents (if it exists).
+        op.create(true).write(true).truncate(true);
 
         if cfg!(unix) {
             op.mode(0o600);
         }
-        op.open(strip_fname)?
+        op.open(strip_fname).with_context(|| {
+            format!(
+                "Failed to open decrypted output file for writing (permission denied?): {}",
+                strip_fname
+            )
+        })?
     };
 
     let identity = age::scrypt::Identity::new(passphrase.clone());
@@ -74,8 +89,15 @@ mod tests {
         let encrypted_path = format!("{}.enc", p);
         encrypt_file(p, &passphrase).unwrap();
         decrypt_file(&encrypted_path, &passphrase).unwrap();
-        let encrypted_str =
-            std::fs::read_to_string(encrypted_path).unwrap_or_else(|_| "".to_string());
+        let encrypted_str = std::fs::read_to_string(encrypted_path).unwrap();
+        assert!(
+            encrypted_str.starts_with("-----BEGIN AGE ENCRYPTED FILE-----"),
+            "encrypted output should be ASCII-armored"
+        );
+        assert!(
+            encrypted_str.contains("-----END AGE ENCRYPTED FILE-----"),
+            "encrypted output should contain END marker"
+        );
         let decrypted_str = std::fs::read_to_string(p).unwrap();
         assert_eq!(original, decrypted_str);
         assert_ne!(original, encrypted_str)

@@ -38,28 +38,28 @@ jobs:
       matrix:
         job:
           - {
-              os: ubuntu-20.04,
+              os: ubuntu-24.04,
               target: arm-unknown-linux-gnueabihf,
               use-cross: true,
             }
           - {
-              os: ubuntu-20.04,
+              os: ubuntu-24.04,
               target: aarch64-unknown-linux-gnu,
               use-cross: true,
             }
           - {
-              os: ubuntu-20.04,
+              os: ubuntu-24.04,
               target: i686-unknown-linux-gnu,
               use-cross: true,
             }
           - {
-              os: ubuntu-20.04,
+              os: ubuntu-24.04,
               target: i686-unknown-linux-musl,
               use-cross: true,
             }
-          - { os: ubuntu-20.04, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-24.04, target: x86_64-unknown-linux-gnu }
           - {
-              os: ubuntu-20.04,
+              os: ubuntu-24.04,
               target: x86_64-unknown-linux-musl,
               use-cross: true,
             }
@@ -147,8 +147,8 @@ jobs:
             "${STRIP}" "${BIN_PATH}"
           fi
           # Let subsequent steps know where to find the (stripped) bin
-          echo ::set-output name=BIN_PATH::${BIN_PATH}
-          echo ::set-output name=BIN_NAME::${BIN_NAME}
+          echo "BIN_PATH=${BIN_PATH}" >> $GITHUB_OUTPUT
+          echo "BIN_NAME=${BIN_NAME}" >> $GITHUB_OUTPUT
 
       - name: Create tarball
         id: package
@@ -157,7 +157,7 @@ jobs:
           PKG_suffix=".tar.gz" ; case ${{ matrix.job.target }} in *-pc-windows-*) PKG_suffix=".zip" ;; esac;
           PKG_BASENAME=${PROJECT_NAME}-v${PROJECT_VERSION}-${{ matrix.job.target }}
           PKG_NAME=${PKG_BASENAME}${PKG_suffix}
-          echo ::set-output name=PKG_NAME::${PKG_NAME}
+          echo "PKG_NAME=${PKG_NAME}" >> $GITHUB_OUTPUT
           PKG_STAGING="${{ env.CICD_INTERMEDIATES_DIR }}/package"
           ARCHIVE_DIR="${PKG_STAGING}/${PKG_BASENAME}/"
           mkdir -p "${ARCHIVE_DIR}"
@@ -174,7 +174,7 @@ jobs:
           esac;
           popd >/dev/null
           # Let subsequent steps know where to find the compressed package
-          echo ::set-output name=PKG_PATH::"${PKG_STAGING}/${PKG_NAME}"
+          echo "PKG_PATH=${PKG_STAGING}/${PKG_NAME}" >> $GITHUB_OUTPUT
       - name: "Artifact upload: tarball"
         uses: actions/upload-artifact@master
         with:
@@ -187,7 +187,7 @@ jobs:
         run: |
           echo "$GITHUB_REF"
           unset IS_RELEASE ; if [[ $GITHUB_REF =~ ^refs/tags/v[0-9].* ]]; then IS_RELEASE='true' ; fi
-          echo ::set-output name=IS_RELEASE::${IS_RELEASE}
+          echo "IS_RELEASE=${IS_RELEASE}" >> $GITHUB_OUTPUT
       - name: Publish archives and packages
         uses: softprops/action-gh-release@v1
         if: steps.is-release.outputs.IS_RELEASE

@@ -30,3 +30,4 @@ walkdir = "2"
 rpassword = "5.0"
 zeroize = { version = "1.7", features = ["zeroize_derive"] }
 indicatif = "0.17"
+colored = "2.0"

@@ -2,6 +2,7 @@ mod cli;
 mod config;
 mod crypto;
 mod operations;
+mod output;
 mod path_util;
 mod symlink_util;
 
@@ -28,6 +29,7 @@ use crate::{
     config::Config,
     crypto::{decrypt_file, encrypt_file},
     operations::execute,
+    output::{print_info, print_success},
 };
 
 #[macro_use]
@@ -41,11 +43,20 @@ fn main() -> Result<()> {
     if let Err(err) = cfg_str {
         debug!("{}", err);
         if err.kind() == ErrorKind::NotFound {
-            return Err(anyhow!("Cannot found config toml (default: lkdots.toml)"));
+            return Err(anyhow!(
+                "Config file not found: {}\n\n\
+                Hint: Use -c option to specify config file path\n\
+                Default: lkdots.toml in current directory",
+                cfg.config
+            ));
         }
         return Err(anyhow!(err));
     }
     let config: Config = toml::from_str::<ConfigFileStruct>(&cfg_str?)?.into();
+    
+    // Validate configuration
+    config.validate().context("Configuration validation failed")?;
+    
     let base_dir = get_dir(Path::new(&cfg.config))?;
     let entries = &config.entries;
 
@@ -55,7 +66,7 @@ fn main() -> Result<()> {
             let mut again_phrase = prompt_password_stdout("Input passphrase again: ")?;
             if !constant_time_eq(phrase.expose_secret(), &again_phrase) {
                 again_phrase.zeroize();
-                return Err(anyhow!("Two passphrase is different"));
+                return Err(anyhow!("Passphrase verification failed"));
             }
             again_phrase.zeroize();
         }
@@ -64,7 +75,7 @@ fn main() -> Result<()> {
         let files = collect_files_to_process(entries, cfg.is_encrypt_cmd())?;
         
         if files.is_empty() {
-            println!("No files to process.");
+            print_info("No files to process.");
             return Ok(());
         }
         
@@ -241,6 +252,7 @@ fn encrypt_files_parallel(
     })?;
     
     pb.finish_with_message("Encryption completed");
+    print_success(&format!("Successfully encrypted {} file(s)", total));
     
     Ok(())
 }
@@ -284,6 +296,7 @@ fn decrypt_files_parallel(
     })?;
     
     pb.finish_with_message("Decryption completed");
+    print_success(&format!("Successfully decrypted {} file(s)", total));
     
     Ok(())
 }

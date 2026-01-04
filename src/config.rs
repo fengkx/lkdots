@@ -110,3 +110,55 @@ impl From<ConfigFileStruct> for Config<'static> {
         }
     }
 }
+
+impl Config<'_> {
+    /// Validate configuration entries
+    /// Checks if source paths exist and if paths are valid
+    pub fn validate(&self) -> Result<()> {
+        use std::path::Path;
+        
+        if self.entries.is_empty() {
+            return Err(anyhow::anyhow!("Configuration error: No entries found in config file"));
+        }
+        
+        for (idx, entry) in self.entries.iter().enumerate() {
+            let expanded_from = shellexpand::tilde(entry.from.as_ref());
+            let from_path = Path::new(expanded_from.as_ref());
+            
+            // Check if source path exists
+            if !from_path.exists() {
+                return Err(anyhow::anyhow!(
+                    "Configuration error in entry #{}: Source path does not exist\n\
+                    Path: {}",
+                    idx + 1,
+                    entry.from
+                ));
+            }
+            
+            // Validate target path is not empty
+            if entry.to.is_empty() {
+                return Err(anyhow::anyhow!(
+                    "Configuration error in entry #{}: Target path is empty",
+                    idx + 1
+                ));
+            }
+            
+            // Validate gitignore path if entries require encryption
+            if entry.encrypt && !self.gitignore.is_empty() {
+                let expanded_gitignore = shellexpand::tilde(&self.gitignore);
+                let gitignore_parent = Path::new(expanded_gitignore.as_ref())
+                    .parent();
+                
+                if gitignore_parent.is_none() {
+                    return Err(anyhow::anyhow!(
+                        "Configuration error: Invalid gitignore path (no parent directory)\n\
+                        Path: {}",
+                        self.gitignore
+                    ));
+                }
+            }
+        }
+        
+        Ok(())
+    }
+}

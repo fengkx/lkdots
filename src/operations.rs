@@ -1,4 +1,5 @@
 use crate::{
+    output::{print_error, print_info, print_success},
     path_util::{pathbuf_to_str, relative_path},
     symlink_util::create_symlink,
 };
@@ -152,11 +153,18 @@ pub fn execute(ops: &[Op]) -> Result<()> {
     }
 
     if !conflicts.is_empty() {
-        let err_log = conflicts
-            .iter()
-            .map(|&p| format!("{} is existed and conflict to your configuration", p))
-            .collect::<Vec<_>>()
-            .join("\n");
+        print_error(&format!("Found {} conflict(s)", conflicts.len()));
+        println!("\nConflicting files:");
+        for conflict in &conflicts {
+            println!("  - {}", conflict);
+        }
+        let err_log = format!(
+            "\nResolution suggestions:\n\
+            1. Manually remove or rename the conflicting files\n\
+            2. Use --simulate mode to preview operations\n\
+            3. Check path settings in configuration file\n\
+            4. Backup important files before overwriting"
+        );
         return Err(anyhow!(err_log));
     }
 
@@ -164,21 +172,25 @@ pub fn execute(ops: &[Op]) -> Result<()> {
         match op {
             Op::Existed(p) => {
                 info!("existed: {}", p);
+                print_info(&format!("Already exists: {}", p));
             }
             Op::Conflict(p) => {
                 info!("conflict: {}", p);
+                print_error(&format!("Conflict detected: {}", p));
                 return Err(anyhow!(
-                    "{} is existed and conflict to your configuration",
+                    "{} exists and conflicts with your configuration",
                     p
                 ));
             }
             Op::Mkdirp(p) => {
                 create_dir_all(p)?;
                 info!("mkdirp: {}", p);
+                print_success(&format!("Created directory: {}", p));
             }
             Op::Symlink(from, to, relative) => {
                 info!("symbol link: {} -> {} [{}]", from, to, relative);
                 create_symlink(from, to, relative)?;
+                print_success(&format!("Created symlink: {} -> {}", to, from));
             }
         }
     }

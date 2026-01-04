@@ -3,7 +3,7 @@ use crate::{
     path_util::{pathbuf_to_str, relative_path},
     symlink_util::create_symlink,
 };
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use log::info;
 use std::{
     borrow::Cow,
@@ -78,13 +78,9 @@ fn link_file(from: Cow<str>, to: Cow<str>, res: &mut Vec<Op>) -> Result<()> {
     if from.ends_with(".enc") {
         return Ok(());
     }
-    let parent_dir = Path::new(to.as_ref())
-        .parent()
-        .context("Not parent dir")?;
-    let to_dir = parent_dir
-        .to_str()
-        .context("Fail to get str path")?;
-    
+    let parent_dir = Path::new(to.as_ref()).parent().context("Not parent dir")?;
+    let to_dir = parent_dir.to_str().context("Fail to get str path")?;
+
     if !parent_dir.exists() {
         res.push(Op::Mkdirp(to_dir.into()));
     }
@@ -114,7 +110,8 @@ fn link_dir(from: Cow<str>, to: Cow<str>, result: &mut Vec<Op>) -> Result<()> {
         // create_dir_all(to_path.parent().unwrap_or(Path::new("/")))?;
         let parent_path = to_path.parent().unwrap_or_else(|| Path::new("/"));
         if !parent_path.exists() {
-            let parent_str = parent_path.to_str()
+            let parent_str = parent_path
+                .to_str()
                 .context("Parent path contains invalid UTF-8 characters")?;
             result.push(Op::Mkdirp(parent_str.into()));
         }
@@ -145,12 +142,14 @@ fn link_dir(from: Cow<str>, to: Cow<str>, result: &mut Vec<Op>) -> Result<()> {
 }
 
 pub fn execute(ops: &[Op]) -> Result<()> {
-    let mut conflicts = vec![];
-    for op in ops {
-        if let Op::Conflict(p) = op {
-            conflicts.push(p);
-        }
-    }
+    // 先收集所有冲突
+    let conflicts: Vec<&String> = ops
+        .iter()
+        .filter_map(|op| match op {
+            Op::Conflict(p) => Some(p),
+            _ => None,
+        })
+        .collect();
 
     if !conflicts.is_empty() {
         print_error(&format!("Found {} conflict(s)", conflicts.len()));
@@ -170,17 +169,10 @@ pub fn execute(ops: &[Op]) -> Result<()> {
 
     for op in ops {
         match op {
+            Op::Conflict(_) => unreachable!("Conflicts should be handled above"),
             Op::Existed(p) => {
                 info!("existed: {}", p);
                 print_info(&format!("Already exists: {}", p));
-            }
-            Op::Conflict(p) => {
-                info!("conflict: {}", p);
-                print_error(&format!("Conflict detected: {}", p));
-                return Err(anyhow!(
-                    "{} exists and conflicts with your configuration",
-                    p
-                ));
             }
             Op::Mkdirp(p) => {
                 create_dir_all(p)?;

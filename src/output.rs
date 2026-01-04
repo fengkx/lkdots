@@ -12,12 +12,12 @@ pub fn print_error(msg: &str) {
 
 /// Print warning message with yellow warning sign
 pub fn print_warning(msg: &str) {
-    println!("{} {}", "⚠".yellow().bold(), msg.yellow());
+    println!("{} {}", "!".yellow().bold(), msg.yellow());
 }
 
 /// Print info message with blue info sign
 pub fn print_info(msg: &str) {
-    println!("{} {}", "ℹ".blue().bold(), msg.blue());
+    println!("{} {}", "*".blue().bold(), msg.blue());
 }
 
 /// Print header with bold and underline

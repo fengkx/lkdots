@@ -1,6 +1,7 @@
 mod cli;
 mod config;
 mod crypto;
+mod gitignore;
 mod operations;
 mod output;
 mod path_util;
@@ -11,29 +12,26 @@ use anyhow::{Context, Result, anyhow};
 use config::ConfigFileStruct;
 use indicatif::{ProgressBar, ProgressStyle};
 use log::debug;
-use operations::Op;
-use path_util::{get_dir, pathbuf_to_str, relative_path};
+use path_util::get_dir;
 use rayon::prelude::*;
 use rpassword::prompt_password;
 use std::{
-    collections::HashMap,
-    fs::{OpenOptions, read_to_string},
-    io::{BufRead, ErrorKind, Seek, Write},
+    fs::read_to_string,
+    io::ErrorKind,
     path::{Path, PathBuf},
     sync::Arc,
 };
+use subtle::{Choice, ConstantTimeEq};
 use walkdir::WalkDir;
 use zeroize::Zeroize;
 
 use crate::{
     config::Config,
     crypto::{decrypt_file, encrypt_file},
-    operations::execute,
+    operations::{Op, execute},
     output::{print_info, print_success},
 };
-
-#[macro_use]
-extern crate lazy_static;
+use colored::*;
 
 fn main() -> Result<()> {
     env_logger::init();
@@ -101,68 +99,31 @@ fn main() -> Result<()> {
         .context("Failed to create operations for some entries")?;
 
     if cfg.simulate {
-        let output = opss
-            .iter()
-            .map(|ops| {
-                ops.iter()
-                    .map(|op| format!("{}", op))
-                    .collect::<Vec<String>>()
-                    .join("\n")
-            })
-            .collect::<Vec<String>>()
-            .join("\n");
-        println!("{}", output);
+        println!(
+            "{}",
+            "Simulation Mode - No changes will be made"
+                .bold()
+                .underline()
+        );
+        println!();
+        for ops in &opss {
+            for op in ops {
+                match op {
+                    Op::Mkdirp(p) => println!("{} {}", "→".blue(), p.cyan()),
+                    Op::Symlink(from, to, _) => {
+                        println!("{} {} → {}", "→".green(), to.cyan(), from);
+                    }
+                    Op::Existed(p) => println!("{} {} (already exists)", "•".dimmed(), p.dimmed()),
+                    Op::Conflict(p) => println!("{} {} (CONFLICT)", "✗".red(), p.red()),
+                }
+            }
+        }
     } else {
         opss.par_iter()
             .map(|ops| -> Result<()> { execute(ops) })
             .collect::<Result<()>>()?;
     }
-    write_gitignore(&config, cfg.simulate)?;
-    Ok(())
-}
-
-fn write_gitignore(cfg: &Config, simulate: bool) -> Result<()> {
-    let gitignore_path = shellexpand::tilde(&cfg.gitignore);
-    let dir = pathbuf_to_str(
-        Path::new(gitignore_path.as_ref())
-            .parent()
-            .context("Fail to get git repository root")?,
-    )?;
-
-    let mut has_written = HashMap::new();
-    let mut f = OpenOptions::new()
-        .create(true)
-        .read(true)
-        .write(true)
-        .truncate(false)
-        .open(gitignore_path.as_ref())?;
-
-    // Read existing content
-    let reader = std::io::BufReader::new(&f);
-    for line in reader.lines() {
-        let line = line?;
-        has_written.insert(line, true);
-    }
-
-    // Reposition to end of file for appending new content
-    f.seek(std::io::SeekFrom::End(0))?;
-
-    for e in cfg.entries.iter().filter(|&e| e.encrypt) {
-        let relative = relative_path(shellexpand::tilde(e.from.as_ref()).as_ref(), dir)
-            .context("Failed to calculate relative path for gitignore entry")?;
-        let p = relative.to_string_lossy();
-        let patterns = vec![format!("{}/*", p), format!("!{}/*.enc", p)];
-        for s in patterns {
-            if !has_written.contains_key(&s) {
-                if simulate {
-                    println!("{}", s);
-                } else {
-                    writeln!(f, "{}", s).context("Fail to write gitignore")?;
-                }
-            }
-        }
-    }
-
+    crate::gitignore::write_gitignore(&config, cfg.simulate)?;
     Ok(())
 }
 
@@ -173,12 +134,8 @@ fn constant_time_eq(a: &str, b: &str) -> bool {
         return false;
     }
 
-    // Use byte-level constant-time comparison
-    a.bytes()
-        .zip(b.bytes())
-        .map(|(x, y)| x ^ y)
-        .fold(0u8, |acc, diff| acc | diff)
-        == 0
+    // Use subtle library for constant-time comparison
+    a.as_bytes().ct_eq(b.as_bytes()).unwrap_u8() == 1
 }
 
 /// Collect list of files that need to be encrypted or decrypted
@@ -218,6 +175,24 @@ fn collect_files_to_process(
     Ok(files)
 }
 
+/// Truncate path string safely for UTF-8 characters
+fn truncate_path(s: &str, max_len: usize) -> String {
+    let char_count = s.chars().count();
+    if char_count <= max_len {
+        s.to_string()
+    } else {
+        let suffix: String = s
+            .chars()
+            .rev()
+            .take(max_len - 3)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        format!("...{}", suffix)
+    }
+}
+
 /// Encrypt files in parallel with progress bar
 fn encrypt_files_parallel(files: Vec<PathBuf>, passphrase: Arc<SecretString>) -> Result<()> {
     let total = files.len();
@@ -240,11 +215,7 @@ fn encrypt_files_parallel(files: Vec<PathBuf>, passphrase: Arc<SecretString>) ->
         let pb = pb.clone();
 
         // Update progress bar message
-        let display_name = if file_str.len() > 50 {
-            format!("...{}", &file_str[file_str.len() - 47..])
-        } else {
-            file_str.to_string()
-        };
+        let display_name = truncate_path(&file_str, 50);
         pb.set_message(display_name);
 
         // Execute encryption
@@ -281,11 +252,7 @@ fn decrypt_files_parallel(files: Vec<PathBuf>, passphrase: Arc<SecretString>) ->
         let pb = pb.clone();
 
         // Update progress bar message
-        let display_name = if file_str.len() > 50 {
-            format!("...{}", &file_str[file_str.len() - 47..])
-        } else {
-            file_str.to_string()
-        };
+        let display_name = truncate_path(&file_str, 50);
         pb.set_message(display_name);
 
         // Execute decryption

@@ -1,4 +1,4 @@
-use crate::operations::{link_file_or_dir, Op};
+use crate::operations::{Op, link_file_or_dir};
 use anyhow::{Context, Result};
 use log::debug;
 use serde::{Deserialize, Serialize};
@@ -7,7 +7,7 @@ use std::{borrow::Cow, ffi::OsString, path::Path};
 pub const PLATFORM: &str = if cfg!(target_os = "linux") {
     "linux"
 } else if cfg!(target_os = "windows") {
-    "window"
+    "windows"
 } else if cfg!(target_os = "macos") {
     "darwin"
 } else {
@@ -29,7 +29,7 @@ impl PartialEq<Platform> for str {
         match other {
             Platform::Linux => self == "linux",
             Platform::Darwin => self == "darwin",
-            Platform::Window => self == "window",
+            Platform::Window => self == "windows",
         }
     }
 }
@@ -71,7 +71,8 @@ impl Entry<'_> {
         } else {
             base_dir.join(self.from.as_ref()).into_os_string()
         };
-        let from = from_osstr.to_str()
+        let from = from_osstr
+            .to_str()
             .context("Path contains invalid UTF-8 characters")?;
         let from = shellexpand::tilde(from);
         let to = shellexpand::tilde(self.to.as_ref());
@@ -116,15 +117,17 @@ impl Config<'_> {
     /// Checks if source paths exist and if paths are valid
     pub fn validate(&self) -> Result<()> {
         use std::path::Path;
-        
+
         if self.entries.is_empty() {
-            return Err(anyhow::anyhow!("Configuration error: No entries found in config file"));
+            return Err(anyhow::anyhow!(
+                "Configuration error: No entries found in config file"
+            ));
         }
-        
+
         for (idx, entry) in self.entries.iter().enumerate() {
             let expanded_from = shellexpand::tilde(entry.from.as_ref());
             let from_path = Path::new(expanded_from.as_ref());
-            
+
             // Check if source path exists
             if !from_path.exists() {
                 return Err(anyhow::anyhow!(
@@ -134,7 +137,7 @@ impl Config<'_> {
                     entry.from
                 ));
             }
-            
+
             // Validate target path is not empty
             if entry.to.is_empty() {
                 return Err(anyhow::anyhow!(
@@ -142,13 +145,12 @@ impl Config<'_> {
                     idx + 1
                 ));
             }
-            
+
             // Validate gitignore path if entries require encryption
             if entry.encrypt && !self.gitignore.is_empty() {
                 let expanded_gitignore = shellexpand::tilde(&self.gitignore);
-                let gitignore_parent = Path::new(expanded_gitignore.as_ref())
-                    .parent();
-                
+                let gitignore_parent = Path::new(expanded_gitignore.as_ref()).parent();
+
                 if gitignore_parent.is_none() {
                     return Err(anyhow::anyhow!(
                         "Configuration error: Invalid gitignore path (no parent directory)\n\
@@ -158,7 +160,7 @@ impl Config<'_> {
                 }
             }
         }
-        
+
         Ok(())
     }
 }

@@ -16,7 +16,7 @@ pub fn encrypt_file(src: &str, passphrase: &SecretString) -> Result<()> {
         Some(format!("{}.enc", src)),
         true, // allow_overwrite
         OutputFormat::Text,
-        0o644,
+        0o600,
         false, // input_is_tty
     )?;
     let armored = ArmoredWriter::wrap_output(writer, Format::AsciiArmor)?;

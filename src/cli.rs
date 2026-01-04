@@ -1,31 +1,36 @@
+use clap::{Parser, Subcommand};
 use log::debug;
-use std::{env::current_dir, io::Result};
-use structopt::StructOpt;
+use std::{env::current_dir, io::Result, sync::LazyLock};
 
-lazy_static! {
-    static ref LKDOTS_DEFAULT_CONFIG_PATH: String = current_dir()
+static LKDOTS_DEFAULT_CONFIG_PATH: LazyLock<String> = LazyLock::new(|| {
+    current_dir()
         .map(|p| p.join("lkdots.toml"))
-        .and_then(|p| p.to_str().map(|s| s.to_owned()).ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Current directory path contains invalid UTF-8",
-            )
-        }))
-        .expect("Fail to found current dir");
-}
+        .and_then(|p| {
+            p.to_str().map(|s| s.to_owned()).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Current directory path contains invalid UTF-8",
+                )
+            })
+        })
+        .expect("Fail to found current dir")
+});
 
-#[derive(PartialEq, StructOpt, Debug)]
-/// A cli tool to create symbol link of dotfiles with encryption and more
+#[derive(PartialEq, Parser, Debug)]
+#[command(
+    version,
+    about = "A cli tool to create symbol link of dotfiles with encryption and more"
+)]
 pub struct Cli {
     /// path to config file
-    #[structopt(short = "c", default_value = &LKDOTS_DEFAULT_CONFIG_PATH)]
+    #[arg(short = 'c', default_value = LKDOTS_DEFAULT_CONFIG_PATH.as_str())]
     pub config: String,
 
     /// simulate fs operations, do not actually make any filesystem changes
-    #[structopt(long = "simulate")]
+    #[arg(long = "simulate")]
     pub simulate: bool,
 
-    #[structopt(subcommand)]
+    #[command(subcommand)]
     pub cmd: Option<SubCommand>,
 }
 
@@ -46,7 +51,7 @@ impl Cli {
     }
 }
 
-#[derive(StructOpt, PartialEq, Debug)]
+#[derive(Subcommand, PartialEq, Debug)]
 pub enum SubCommand {
     /// encrypt files to *.enc file
     Encrypt,
@@ -55,7 +60,7 @@ pub enum SubCommand {
 }
 
 pub fn config() -> Result<Cli> {
-    let args = Cli::from_args();
+    let args = Cli::parse();
     debug!("{:?}", args);
     Ok(args)
 }

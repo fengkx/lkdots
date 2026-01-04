@@ -28,3 +28,4 @@ log = "0.4"
 env_logger = "0.9.0"
 walkdir = "2"
 rpassword = "5.0"
+zeroize = { version = "1.7", features = ["zeroize_derive"] }

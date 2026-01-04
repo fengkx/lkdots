@@ -113,7 +113,9 @@ fn link_dir(from: Cow<str>, to: Cow<str>, result: &mut Vec<Op>) -> Result<()> {
         // create_dir_all(to_path.parent().unwrap_or(Path::new("/")))?;
         let parent_path = to_path.parent().unwrap_or_else(|| Path::new("/"));
         if !parent_path.exists() {
-            result.push(Op::Mkdirp(parent_path.to_str().unwrap().into()));
+            let parent_str = parent_path.to_str()
+                .context("Parent path contains invalid UTF-8 characters")?;
+            result.push(Op::Mkdirp(parent_str.into()));
         }
         result.push(Op::Symlink(
             from.into(),
@@ -141,7 +143,7 @@ fn link_dir(from: Cow<str>, to: Cow<str>, result: &mut Vec<Op>) -> Result<()> {
     Ok(())
 }
 
-pub fn excute(ops: &[Op]) -> Result<()> {
+pub fn execute(ops: &[Op]) -> Result<()> {
     let mut conflicts = vec![];
     for op in ops {
         if let Op::Conflict(p) = op {
@@ -152,7 +154,7 @@ pub fn excute(ops: &[Op]) -> Result<()> {
     if !conflicts.is_empty() {
         let err_log = conflicts
             .iter()
-            .map(|&p| format!("{} is existed and conlict to your configuration", p))
+            .map(|&p| format!("{} is existed and conflict to your configuration", p))
             .collect::<Vec<_>>()
             .join("\n");
         return Err(anyhow!(err_log));
@@ -166,7 +168,7 @@ pub fn excute(ops: &[Op]) -> Result<()> {
             Op::Conflict(p) => {
                 info!("conflict: {}", p);
                 return Err(anyhow!(
-                    "{} is existed and conlict to your configuration",
+                    "{} is existed and conflict to your configuration",
                     p
                 ));
             }

@@ -1,5 +1,5 @@
 use crate::operations::{link_file_or_dir, Op};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use log::debug;
 use serde::{Deserialize, Serialize};
 use std::{borrow::Cow, ffi::OsString, path::Path};
@@ -18,23 +18,23 @@ pub const PLATFORM: &str = if cfg!(target_os = "linux") {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum Platfrom {
+pub enum Platform {
     Linux,
     Darwin,
     Window,
 }
 
-impl PartialEq<Platfrom> for str {
-    fn eq(&self, other: &Platfrom) -> bool {
+impl PartialEq<Platform> for str {
+    fn eq(&self, other: &Platform) -> bool {
         match other {
-            Platfrom::Linux => self == "linux",
-            Platfrom::Darwin => self == "darwin",
-            Platfrom::Window => self == "window",
+            Platform::Linux => self == "linux",
+            Platform::Darwin => self == "darwin",
+            Platform::Window => self == "window",
         }
     }
 }
 
-impl PartialEq<str> for Platfrom {
+impl PartialEq<str> for Platform {
     fn eq(&self, other: &str) -> bool {
         other == self
     }
@@ -44,7 +44,7 @@ impl PartialEq<str> for Platfrom {
 pub struct ConfigFileEntry {
     pub from: String,
     pub to: String,
-    pub platforms: Option<Vec<Platfrom>>,
+    pub platforms: Option<Vec<Platform>>,
     pub encrypt: Option<bool>,
 }
 
@@ -60,7 +60,7 @@ pub struct ConfigFileStruct {
 pub struct Entry<'a> {
     pub from: Cow<'a, String>,
     pub to: Cow<'a, String>,
-    pub platforms: Cow<'a, Vec<Platfrom>>,
+    pub platforms: Cow<'a, Vec<Platform>>,
     pub encrypt: bool,
 }
 
@@ -71,7 +71,8 @@ impl<'a> Entry<'a> {
         } else {
             base_dir.join(&self.from.as_ref()).into_os_string()
         };
-        let from = from_osstr.to_str().unwrap();
+        let from = from_osstr.to_str()
+            .context("Path contains invalid UTF-8 characters")?;
         let from = shellexpand::tilde(from);
         let to = shellexpand::tilde(self.to.as_ref());
         debug!("from: {}, to: {}", from, to);
@@ -101,7 +102,7 @@ impl From<ConfigFileStruct> for Config<'static> {
                     from: Cow::Owned(e.from),
                     to: Cow::Owned(e.to),
                     platforms: Cow::Owned(e.platforms.unwrap_or_else(|| {
-                        vec![Platfrom::Linux, Platfrom::Darwin, Platfrom::Window]
+                        vec![Platform::Linux, Platform::Darwin, Platform::Window]
                     })),
                     encrypt: e.encrypt.unwrap_or(false),
                 })

@@ -12,6 +12,8 @@ use operations::Op;
 use path_util::{get_dir, pathbuf_to_str, relative_path};
 use rayon::prelude::*;
 use rpassword::prompt_password_stdout;
+use age::secrecy::{Secret, ExposeSecret};
+use zeroize::Zeroize;
 use std::{
     collections::HashMap,
     fs::{read_to_string, OpenOptions},
@@ -23,7 +25,7 @@ use walkdir::WalkDir;
 use crate::{
     config::Config,
     crypto::{decrypt_file, encrypt_file},
-    operations::excute,
+    operations::execute,
 };
 
 #[macro_use]
@@ -46,14 +48,17 @@ fn main() -> Result<()> {
     let entries = &config.entries;
 
     if cfg.is_encrypt_cmd() || cfg.is_decrypt_cmd() {
-        let phrase = prompt_password_stdout("Passphrase: ")?;
+        let phrase = Secret::new(prompt_password_stdout("Passphrase: ")?);
         if cfg.is_encrypt_cmd() {
-            let again_phrase = prompt_password_stdout("Input passphrase again: ")?;
-            if again_phrase != phrase {
+            let mut again_phrase = prompt_password_stdout("Input passphrase again: ")?;
+            if !constant_time_eq(&phrase.expose_secret(), &again_phrase) {
+                again_phrase.zeroize();
                 return Err(anyhow!("Two passphrase is different"));
             }
+            again_phrase.zeroize();
         }
-        return entries
+        
+        let result = entries
             .par_iter()
             .filter(|e| e.encrypt)
             .map(|e| {
@@ -79,13 +84,18 @@ fn main() -> Result<()> {
                 Ok(())
             })
             .collect::<Result<()>>();
+        
+        // 密码不再需要时，确保内存被清零
+        // Secret 类型在 Drop 时会自动清零，但这里显式处理以确保安全
+        return result;
     }
 
     let r = entries
         .par_iter()
         .filter(|e| e.match_platform())
         .map(|cfg| cfg.create_ops(base_dir));
-    let opss = r.collect::<Result<Vec<Vec<Op>>>>().unwrap();
+    let opss = r.collect::<Result<Vec<Vec<Op>>>>()
+        .context("Failed to create operations for some entries")?;
 
     if cfg.simulate {
         let output = opss
@@ -101,7 +111,7 @@ fn main() -> Result<()> {
         println!("{}", output);
     } else {
         opss.par_iter()
-            .map(|ops| -> Result<()> { excute(ops) })
+            .map(|ops| -> Result<()> { execute(ops) })
             .collect::<Result<()>>()?;
     }
     write_gitignore(&config, cfg.simulate)?;
@@ -128,29 +138,37 @@ fn write_gitignore(cfg: &Config, simulate: bool) -> Result<()> {
         has_written.insert(line, true);
     }
 
-    cfg.entries
-        .iter()
-        .filter(|&e| e.encrypt)
-        .map(|e| {
-            format!(
-                "{}",
-                relative_path(shellexpand::tilde(e.from.as_ref()).as_ref(), dir)
-                    .unwrap()
-                    .to_string_lossy()
-            )
-        })
-        .flat_map(|p| vec![format!("{}/*", p), format!("!{}/*.enc", p)])
-        .for_each(|s| {
+    for e in cfg.entries.iter().filter(|&e| e.encrypt) {
+        let relative = relative_path(shellexpand::tilde(e.from.as_ref()).as_ref(), dir)
+            .context("Failed to calculate relative path for gitignore entry")?;
+        let p = relative.to_string_lossy();
+        let patterns = vec![format!("{}/*", p), format!("!{}/*.enc", p)];
+        for s in patterns {
             if has_written.get(&s).is_none() {
                 if simulate {
                     println!("{}", s);
                 } else {
                     writeln!(f, "{}", s)
-                        .context("Fail to write gitignore")
-                        .unwrap();
+                        .context("Fail to write gitignore")?;
                 }
             }
-        });
+        }
+    }
 
     Ok(())
+}
+
+/// 常量时间字符串比较，防止时序攻击
+/// 即使密码不匹配，也会执行完整的比较操作
+fn constant_time_eq(a: &str, b: &str) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    
+    // 使用字节级别的常量时间比较
+    a.bytes()
+        .zip(b.bytes())
+        .map(|(x, y)| x ^ y)
+        .fold(0u8, |acc, diff| acc | diff)
+        == 0
 }

@@ -40,7 +40,7 @@ Array of entries to "link".
 pub struct ConfigFileEntry {
     pub from: String,
     pub to: String,
-    pub platforms: Option<Vec<Platfrom>>,
+    pub platforms: Option<Vec<Platform>>,
     pub encrypt: Option<bool>,
 }
 ```

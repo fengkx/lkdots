@@ -64,12 +64,12 @@ pub struct Entry<'a> {
     pub encrypt: bool,
 }
 
-impl<'a> Entry<'a> {
+impl Entry<'_> {
     pub fn create_ops(&self, base_dir: &Path) -> Result<Vec<Op>> {
         let from_osstr: OsString = if self.from.starts_with('/') || self.from.starts_with('~') {
             self.from.as_ref().into()
         } else {
-            base_dir.join(&self.from.as_ref()).into_os_string()
+            base_dir.join(self.from.as_ref()).into_os_string()
         };
         let from = from_osstr.to_str()
             .context("Path contains invalid UTF-8 characters")?;

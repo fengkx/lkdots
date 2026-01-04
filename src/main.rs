@@ -7,18 +7,20 @@ mod symlink_util;
 
 use anyhow::{anyhow, Context, Result};
 use config::ConfigFileStruct;
-use log::{debug, info};
+use log::debug;
 use operations::Op;
 use path_util::{get_dir, pathbuf_to_str, relative_path};
 use rayon::prelude::*;
 use rpassword::prompt_password_stdout;
 use age::secrecy::{Secret, ExposeSecret};
 use zeroize::Zeroize;
+use indicatif::{ProgressBar, ProgressStyle};
 use std::{
     collections::HashMap,
     fs::{read_to_string, OpenOptions},
-    io::{BufRead, ErrorKind, Write},
-    path::Path,
+    io::{BufRead, ErrorKind, Seek, Write},
+    path::{Path, PathBuf},
+    sync::Arc,
 };
 use walkdir::WalkDir;
 
@@ -51,42 +53,29 @@ fn main() -> Result<()> {
         let phrase = Secret::new(prompt_password_stdout("Passphrase: ")?);
         if cfg.is_encrypt_cmd() {
             let mut again_phrase = prompt_password_stdout("Input passphrase again: ")?;
-            if !constant_time_eq(&phrase.expose_secret(), &again_phrase) {
+            if !constant_time_eq(phrase.expose_secret(), &again_phrase) {
                 again_phrase.zeroize();
                 return Err(anyhow!("Two passphrase is different"));
             }
             again_phrase.zeroize();
         }
         
-        let result = entries
-            .par_iter()
-            .filter(|e| e.encrypt)
-            .map(|e| {
-                let expanded_from = shellexpand::tilde(e.from.as_ref());
-                let walker = WalkDir::new(expanded_from.as_ref())
-                    .follow_links(false)
-                    .into_iter();
-                for entry in walker.filter_entry(|e| !e.path_is_symlink()) {
-                    let entry = entry?;
-                    if entry.metadata()?.is_file() {
-                        let path = entry.path().to_string_lossy();
-                        if cfg.is_encrypt_cmd() {
-                            if !path.as_ref().ends_with(".enc") {
-                                info!("encrypt: {}", path.as_ref());
-                                encrypt_file(path.as_ref(), &phrase)?;
-                            }
-                        } else if cfg.is_decrypt_cmd() && path.as_ref().ends_with(".enc") {
-                            info!("decrypt: {}", path.as_ref());
-                            decrypt_file(path.as_ref(), &phrase)?;
-                        }
-                    }
-                }
-                Ok(())
-            })
-            .collect::<Result<()>>();
+        // Phase 1: Collect files to process
+        let files = collect_files_to_process(entries, cfg.is_encrypt_cmd())?;
         
-        // 密码不再需要时，确保内存被清零
-        // Secret 类型在 Drop 时会自动清零，但这里显式处理以确保安全
+        if files.is_empty() {
+            println!("No files to process.");
+            return Ok(());
+        }
+        
+        // Phase 2: Process files in parallel (with progress bar)
+        let phrase_arc = Arc::new(phrase);
+        let result = if cfg.is_encrypt_cmd() {
+            encrypt_files_parallel(files, phrase_arc)
+        } else {
+            decrypt_files_parallel(files, phrase_arc)
+        };
+        
         return result;
     }
 
@@ -131,12 +120,18 @@ fn write_gitignore(cfg: &Config, simulate: bool) -> Result<()> {
         .create(true)
         .read(true)
         .write(true)
+        .truncate(false)
         .open(gitignore_path.as_ref())?;
+    
+    // Read existing content
     let reader = std::io::BufReader::new(&f);
-    let lines = reader.lines();
-    for line in lines.flatten() {
+    for line in reader.lines() {
+        let line = line?;
         has_written.insert(line, true);
     }
+    
+    // Reposition to end of file for appending new content
+    f.seek(std::io::SeekFrom::End(0))?;
 
     for e in cfg.entries.iter().filter(|&e| e.encrypt) {
         let relative = relative_path(shellexpand::tilde(e.from.as_ref()).as_ref(), dir)
@@ -144,7 +139,7 @@ fn write_gitignore(cfg: &Config, simulate: bool) -> Result<()> {
         let p = relative.to_string_lossy();
         let patterns = vec![format!("{}/*", p), format!("!{}/*.enc", p)];
         for s in patterns {
-            if has_written.get(&s).is_none() {
+            if !has_written.contains_key(&s) {
                 if simulate {
                     println!("{}", s);
                 } else {
@@ -158,17 +153,137 @@ fn write_gitignore(cfg: &Config, simulate: bool) -> Result<()> {
     Ok(())
 }
 
-/// 常量时间字符串比较，防止时序攻击
-/// 即使密码不匹配，也会执行完整的比较操作
+/// Constant-time string comparison to prevent timing attacks
+/// Even if passwords don't match, the full comparison operation is performed
 fn constant_time_eq(a: &str, b: &str) -> bool {
     if a.len() != b.len() {
         return false;
     }
     
-    // 使用字节级别的常量时间比较
+    // Use byte-level constant-time comparison
     a.bytes()
         .zip(b.bytes())
         .map(|(x, y)| x ^ y)
         .fold(0u8, |acc, diff| acc | diff)
         == 0
+}
+
+/// Collect list of files that need to be encrypted or decrypted
+fn collect_files_to_process(entries: &[crate::config::Entry], is_encrypt: bool) -> Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
+    
+    for entry in entries.iter().filter(|e| e.encrypt) {
+        let expanded_from = shellexpand::tilde(entry.from.as_ref());
+        let walker = WalkDir::new(expanded_from.as_ref())
+            .follow_links(false)
+            .into_iter();
+        
+        for entry_result in walker.filter_entry(|e| !e.path_is_symlink()) {
+            let entry = entry_result?;
+            if entry.metadata()?.is_file() {
+                let path = entry.path();
+                let path_str = path.to_string_lossy();
+                
+                if is_encrypt {
+                    // Encryption: skip already encrypted files
+                    if !path_str.ends_with(".enc") {
+                        files.push(path.to_path_buf());
+                    }
+                } else {
+                    // Decryption: only process .enc files
+                    if path_str.ends_with(".enc") {
+                        files.push(path.to_path_buf());
+                    }
+                }
+            }
+        }
+    }
+    
+    Ok(files)
+}
+
+/// Encrypt files in parallel with progress bar
+fn encrypt_files_parallel(
+    files: Vec<PathBuf>,
+    passphrase: Arc<Secret<String>>,
+) -> Result<()> {
+    let total = files.len();
+    if total == 0 {
+        return Ok(());
+    }
+    
+    // Create progress bar
+    let pb = ProgressBar::new(total as u64);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} files ({percent}%) {msg}")
+            .unwrap()
+            .progress_chars("#>-"),
+    );
+    
+    // Process files in parallel (ProgressBar is thread-safe and can be cloned directly)
+    files.par_iter().try_for_each(|file_path| -> Result<()> {
+        let file_str = file_path.to_string_lossy();
+        let pb = pb.clone();
+        
+        // Update progress bar message
+        let display_name = if file_str.len() > 50 {
+            format!("...{}", &file_str[file_str.len() - 47..])
+        } else {
+            file_str.to_string()
+        };
+        pb.set_message(display_name);
+        
+        // Execute encryption
+        encrypt_file(&file_str, &passphrase)?;
+        pb.inc(1);
+        Ok(())
+    })?;
+    
+    pb.finish_with_message("Encryption completed");
+    
+    Ok(())
+}
+
+/// Decrypt files in parallel with progress bar
+fn decrypt_files_parallel(
+    files: Vec<PathBuf>,
+    passphrase: Arc<Secret<String>>,
+) -> Result<()> {
+    let total = files.len();
+    if total == 0 {
+        return Ok(());
+    }
+    
+    // Create progress bar
+    let pb = ProgressBar::new(total as u64);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} files ({percent}%) {msg}")
+            .unwrap()
+            .progress_chars("#>-"),
+    );
+    
+    // Process files in parallel (ProgressBar is thread-safe and can be cloned directly)
+    files.par_iter().try_for_each(|file_path| -> Result<()> {
+        let file_str = file_path.to_string_lossy();
+        let pb = pb.clone();
+        
+        // Update progress bar message
+        let display_name = if file_str.len() > 50 {
+            format!("...{}", &file_str[file_str.len() - 47..])
+        } else {
+            file_str.to_string()
+        };
+        pb.set_message(display_name);
+        
+        // Execute decryption
+        decrypt_file(&file_str, &passphrase)?;
+        pb.inc(1);
+        Ok(())
+    })?;
+    
+    pb.finish_with_message("Decryption completed");
+    
+    Ok(())
 }

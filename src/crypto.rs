@@ -49,8 +49,7 @@ pub fn decrypt_file(src: &str, passphrase: &Secret<String>) -> Result<()> {
         if cfg!(unix) {
             op.mode(0o600);
         }
-        let file = op.open(strip_fname)?;
-        file
+        op.open(strip_fname)?
     };
         
     let mut reader = decryptor.decrypt(passphrase, None)?;

@@ -73,14 +73,14 @@ pub fn link_file_or_dir(from: Cow<str>, to: Cow<str>, result: &mut Vec<Op>) -> R
 }
 
 fn link_file(from: Cow<str>, to: Cow<str>, res: &mut Vec<Op>) -> Result<()> {
+    // Skip encrypted files, don't create symlinks
     if from.ends_with(".enc") {
         return Ok(());
     }
     let parent_dir = Path::new(to.as_ref())
         .parent()
         .context("Not parent dir")?;
-    let to_dir = 
-        parent_dir
+    let to_dir = parent_dir
         .to_str()
         .context("Fail to get str path")?;
     

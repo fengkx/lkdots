@@ -4,17 +4,18 @@ use structopt::StructOpt;
 
 lazy_static! {
     static ref LKDOTS_DEFAULT_CONFIG_PATH: String = current_dir()
-        .map(|p| { p.join("lkdots.toml") })
-        .map(|p| {
-            let pt = p.to_str().unwrap();
-            pt.to_owned()
-        })
+        .map(|p| p.join("lkdots.toml"))
+        .and_then(|p| p.to_str().map(|s| s.to_owned()).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Current directory path contains invalid UTF-8"
+            )
+        }))
         .expect("Fail to found current dir");
 }
 
 #[derive(PartialEq, StructOpt, Debug)]
 /// A cli tool to create symbol link of dotfiles with encryption and more
-
 pub struct Cli {
     /// path to config file
     #[structopt(short = "c", default_value = &LKDOTS_DEFAULT_CONFIG_PATH)]

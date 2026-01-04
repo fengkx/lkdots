@@ -8,7 +8,7 @@ lazy_static! {
         .and_then(|p| p.to_str().map(|s| s.to_owned()).ok_or_else(|| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                "Current directory path contains invalid UTF-8"
+                "Current directory path contains invalid UTF-8",
             )
         }))
         .expect("Fail to found current dir");

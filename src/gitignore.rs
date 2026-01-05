@@ -1,9 +1,10 @@
 use crate::config::Config;
 use crate::path_util::{pathbuf_to_str, relative_path};
 use anyhow::{Context, Result};
+use atomicwrites::{AtomicFile, AllowOverwrite};
 use std::collections::HashMap;
-use std::fs::OpenOptions;
-use std::io::{BufRead, Seek, Write};
+use std::fs::File;
+use std::io::{BufRead, Write};
 use std::path::Path;
 
 const GITIGNORE_START_MARKER: &str = "# lkdots start";
@@ -19,39 +20,39 @@ pub fn write_gitignore(cfg: &Config, simulate: bool) -> Result<()> {
             .context("Fail to get git repository root")?,
     )?;
 
-    let mut f = OpenOptions::new()
-        .create(true)
-        .read(true)
-        .write(true)
-        .truncate(false)
-        .open(gitignore_path.as_ref())?;
-
-    // Read existing content
-    let reader = std::io::BufReader::new(&f);
+    let gitignore_path_ref = gitignore_path.as_ref();
+    let gitignore_path_obj = Path::new(gitignore_path_ref);
+    
+    // Read existing content (if file exists)
     let mut lines: Vec<String> = Vec::new();
     let mut existing_entries = HashMap::new();
     let mut in_lkdots_section = false;
     let mut lkdots_start_idx = None;
     let mut lkdots_end_idx = None;
 
-    for (idx, line_result) in reader.lines().enumerate() {
-        let line = line_result?;
+    if gitignore_path_obj.exists() {
+        let f = File::open(gitignore_path_ref)?;
+        let reader = std::io::BufReader::new(f);
+        
+        for (idx, line_result) in reader.lines().enumerate() {
+            let line = line_result?;
 
-        if line.trim() == GITIGNORE_START_MARKER {
-            in_lkdots_section = true;
-            lkdots_start_idx = Some(idx);
-            continue; // Skip the marker line, we'll regenerate it
-        }
+            if line.trim() == GITIGNORE_START_MARKER {
+                in_lkdots_section = true;
+                lkdots_start_idx = Some(idx);
+                continue; // Skip the marker line, we'll regenerate it
+            }
 
-        if line.trim() == GITIGNORE_END_MARKER {
-            in_lkdots_section = false;
-            lkdots_end_idx = Some(idx);
-            continue; // Skip the marker line, we'll regenerate it
-        }
+            if line.trim() == GITIGNORE_END_MARKER {
+                in_lkdots_section = false;
+                lkdots_end_idx = Some(idx);
+                continue; // Skip the marker line, we'll regenerate it
+            }
 
-        if !in_lkdots_section {
-            lines.push(line.clone());
-            existing_entries.insert(line, true);
+            if !in_lkdots_section {
+                lines.push(line.clone());
+                existing_entries.insert(line, true);
+            }
         }
     }
 
@@ -87,23 +88,26 @@ pub fn write_gitignore(cfg: &Config, simulate: bool) -> Result<()> {
         return Ok(());
     }
 
-    // Reconstruct file: existing content + lkdots section
-    f.set_len(0)?; // Truncate file
-    f.seek(std::io::SeekFrom::Start(0))?;
-
-    // Write existing content (outside lkdots section)
-    for line in &lines {
-        writeln!(f, "{}", line)?;
-    }
-
-    // Write lkdots section if there are entries
-    if !new_entries.is_empty() || lkdots_start_idx.is_some() {
-        writeln!(f, "{}", GITIGNORE_START_MARKER)?;
-        for entry in &new_entries {
-            writeln!(f, "{}", entry)?;
+    // Atomic write: use atomicwrites crate for safe atomic file operations
+    let af = AtomicFile::new(gitignore_path_ref, AllowOverwrite);
+    af.write(|f| {
+        // Write existing content (outside lkdots section)
+        for line in &lines {
+            writeln!(f, "{}", line)?;
         }
-        writeln!(f, "{}", GITIGNORE_END_MARKER)?;
-    }
+
+        // Write lkdots section if there are entries
+        if !new_entries.is_empty() || lkdots_start_idx.is_some() {
+            writeln!(f, "{}", GITIGNORE_START_MARKER)?;
+            for entry in &new_entries {
+                writeln!(f, "{}", entry)?;
+            }
+            writeln!(f, "{}", GITIGNORE_END_MARKER)?;
+        }
+
+        Ok::<(), std::io::Error>(())
+    })
+    .with_context(|| format!("Failed to atomically write gitignore file: {:?}", gitignore_path_ref))?;
 
     Ok(())
 }

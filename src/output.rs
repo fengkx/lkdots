@@ -1,3 +1,4 @@
+#![allow(unused)]
 use colored::*;
 
 /// Print success message with green checkmark

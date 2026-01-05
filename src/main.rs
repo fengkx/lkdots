@@ -21,7 +21,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-use subtle::{Choice, ConstantTimeEq};
+use subtle::ConstantTimeEq;
 use walkdir::WalkDir;
 use zeroize::Zeroize;
 

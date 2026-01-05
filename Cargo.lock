@@ -137,6 +137,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "atomicwrites"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ef1bb8d1b645fe38d51dfc331d720fb5fc2c94b440c76cc79c80ff265ca33e3"
+dependencies = [
+ "rustix 0.38.44",
+ "tempfile",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
 name = "base64"
 version = "0.21.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -918,6 +929,7 @@ version = "0.1.1"
 dependencies = [
  "age",
  "anyhow",
+ "atomicwrites",
  "clap",
  "colored",
  "env_logger",

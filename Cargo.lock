@@ -941,6 +941,7 @@ dependencies = [
  "serde",
  "shellexpand",
  "subtle",
+ "tempfile",
  "toml 0.9.10+spec-1.1.0",
  "walkdir",
  "zeroize",

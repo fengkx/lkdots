@@ -80,16 +80,22 @@ pub fn decrypt_file(src: &str, passphrase: &SecretString) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
+    use std::fs;
 
     #[test]
     fn test_crypto() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_file = temp_dir.path().join("test_file.txt");
+        let original = "test content for encryption";
+        fs::write(&test_file, original).unwrap();
+        
         let passphrase = SecretString::new("abc".to_string().into_boxed_str());
-        let p = "./tests/test-data/private.key";
-        let original = std::fs::read_to_string(p).unwrap();
+        let p = test_file.to_str().unwrap();
         let encrypted_path = format!("{}.enc", p);
         encrypt_file(p, &passphrase).unwrap();
         decrypt_file(&encrypted_path, &passphrase).unwrap();
-        let encrypted_str = std::fs::read_to_string(encrypted_path).unwrap();
+        let encrypted_str = fs::read_to_string(&encrypted_path).unwrap();
         assert!(
             encrypted_str.starts_with("-----BEGIN AGE ENCRYPTED FILE-----"),
             "encrypted output should be ASCII-armored"
@@ -98,7 +104,7 @@ mod tests {
             encrypted_str.contains("-----END AGE ENCRYPTED FILE-----"),
             "encrypted output should contain END marker"
         );
-        let decrypted_str = std::fs::read_to_string(p).unwrap();
+        let decrypted_str = fs::read_to_string(p).unwrap();
         assert_eq!(original, decrypted_str);
         assert_ne!(original, encrypted_str)
     }

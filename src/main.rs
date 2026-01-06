@@ -266,3 +266,189 @@ fn decrypt_files_parallel(files: Vec<PathBuf>, passphrase: Arc<SecretString>) ->
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_constant_time_eq() {
+        assert!(constant_time_eq("abc", "abc"));
+        assert!(!constant_time_eq("abc", "def"));
+        assert!(!constant_time_eq("abc", "abcd"));
+        assert!(!constant_time_eq("abcd", "abc"));
+        assert!(constant_time_eq("", ""));
+        assert!(!constant_time_eq("a", ""));
+    }
+
+    #[test]
+    fn test_truncate_path_short() {
+        let path = "short";
+        let result = truncate_path(path, 10);
+        assert_eq!(result, "short");
+    }
+
+    #[test]
+    fn test_truncate_path_long() {
+        let path = "this/is/a/very/long/path/that/needs/truncation";
+        let result = truncate_path(path, 20);
+        assert!(result.len() <= 20);
+        assert!(result.starts_with("..."));
+    }
+
+    #[test]
+    fn test_truncate_path_exact_length() {
+        let path = "exact";
+        let result = truncate_path(path, 5);
+        assert_eq!(result, "exact");
+    }
+
+    #[test]
+    fn test_truncate_path_unicode() {
+        let path = "测试/路径/中文";
+        let result = truncate_path(path, 10);
+        // Should handle UTF-8 correctly
+        assert!(result.chars().count() <= 10);
+    }
+
+    #[test]
+    fn test_collect_files_to_process_encrypt_mode() {
+        use crate::config::{Entry, Platform};
+        use std::borrow::Cow;
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let test_file = temp_dir.path().join("test.txt");
+        fs::write(&test_file, "content").unwrap();
+
+        let encrypted_file = temp_dir.path().join("test.enc");
+        fs::write(&encrypted_file, "encrypted content").unwrap();
+
+        let entries = vec![Entry {
+            from: Cow::Owned(temp_dir.path().to_str().unwrap().to_string()),
+            to: Cow::Owned("~/test".to_string()),
+            platforms: Cow::Owned(vec![Platform::Linux, Platform::Darwin]),
+            encrypt: true,
+        }];
+
+        // Encrypt mode: should find test.txt but skip test.enc
+        let files = collect_files_to_process(&entries, true).unwrap();
+        assert!(
+            files
+                .iter()
+                .any(|f| f.to_string_lossy().contains("test.txt"))
+        );
+        assert!(!files.iter().any(|f| f.to_string_lossy().ends_with(".enc")));
+    }
+
+    #[test]
+    fn test_collect_files_to_process_decrypt_mode() {
+        use crate::config::{Entry, Platform};
+        use std::borrow::Cow;
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let test_file = temp_dir.path().join("test.txt");
+        fs::write(&test_file, "content").unwrap();
+
+        let encrypted_file = temp_dir.path().join("test.enc");
+        fs::write(&encrypted_file, "encrypted content").unwrap();
+
+        let entries = vec![Entry {
+            from: Cow::Owned(temp_dir.path().to_str().unwrap().to_string()),
+            to: Cow::Owned("~/test".to_string()),
+            platforms: Cow::Owned(vec![Platform::Linux, Platform::Darwin]),
+            encrypt: true,
+        }];
+
+        // Decrypt mode: should find test.enc but skip test.txt
+        let files = collect_files_to_process(&entries, false).unwrap();
+        assert!(files.iter().any(|f| f.to_string_lossy().ends_with(".enc")));
+        assert!(
+            !files
+                .iter()
+                .any(|f| f.to_string_lossy().contains("test.txt")
+                    && !f.to_string_lossy().ends_with(".enc"))
+        );
+    }
+
+    #[test]
+    fn test_collect_files_to_process_no_encrypt_entries() {
+        use crate::config::{Entry, Platform};
+        use std::borrow::Cow;
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let test_file = temp_dir.path().join("test.txt");
+        fs::write(&test_file, "content").unwrap();
+
+        let entries = vec![Entry {
+            from: Cow::Owned(temp_dir.path().to_str().unwrap().to_string()),
+            to: Cow::Owned("~/test".to_string()),
+            platforms: Cow::Owned(vec![Platform::Linux, Platform::Darwin]),
+            encrypt: false, // encrypt is false
+        }];
+
+        // No encrypt entries: should return empty
+        let files = collect_files_to_process(&entries, true).unwrap();
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn test_collect_files_to_process_nested_dirs() {
+        use crate::config::{Entry, Platform};
+        use std::borrow::Cow;
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let subdir = temp_dir.path().join("subdir");
+        fs::create_dir(&subdir).unwrap();
+
+        let test_file1 = temp_dir.path().join("test1.txt");
+        fs::write(&test_file1, "content1").unwrap();
+
+        let test_file2 = subdir.join("test2.txt");
+        fs::write(&test_file2, "content2").unwrap();
+
+        let entries = vec![Entry {
+            from: Cow::Owned(temp_dir.path().to_str().unwrap().to_string()),
+            to: Cow::Owned("~/test".to_string()),
+            platforms: Cow::Owned(vec![Platform::Linux, Platform::Darwin]),
+            encrypt: true,
+        }];
+
+        // Should find files in nested directories
+        let files = collect_files_to_process(&entries, true).unwrap();
+        assert!(files.len() >= 2);
+    }
+
+    #[test]
+    fn test_encrypt_files_parallel_empty() {
+        use age::secrecy::SecretString;
+        use std::sync::Arc;
+
+        let files = Vec::new();
+        let passphrase = Arc::new(SecretString::new("test".to_string().into_boxed_str()));
+
+        // Should return Ok for empty files
+        let result = encrypt_files_parallel(files, passphrase);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_decrypt_files_parallel_empty() {
+        use age::secrecy::SecretString;
+        use std::sync::Arc;
+
+        let files = Vec::new();
+        let passphrase = Arc::new(SecretString::new("test".to_string().into_boxed_str()));
+
+        // Should return Ok for empty files
+        let result = decrypt_files_parallel(files, passphrase);
+        assert!(result.is_ok());
+    }
+}

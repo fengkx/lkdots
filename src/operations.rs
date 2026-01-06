@@ -188,3 +188,294 @@ pub fn execute(ops: &[Op]) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_op_display() {
+        let op1 = Op::Mkdirp("/test/dir".to_string());
+        let op2 = Op::Symlink(
+            "/from".to_string(),
+            "/to".to_string(),
+            "../from".to_string(),
+        );
+        let op3 = Op::Existed("/existing".to_string());
+        let op4 = Op::Conflict("/conflict".to_string());
+
+        let s1 = format!("{}", op1);
+        assert!(s1.contains("create dir"));
+        assert!(s1.contains("/test/dir"));
+
+        let s2 = format!("{}", op2);
+        assert!(s2.contains("create symbol link"));
+        assert!(s2.contains("/from"));
+        assert!(s2.contains("/to"));
+
+        let s3 = format!("{}", op3);
+        assert!(s3.contains("is existed"));
+
+        let s4 = format!("{}", op4);
+        assert!(s4.contains("is existed and conflicted"));
+    }
+
+    #[test]
+    fn test_link_file_or_dir_with_nonexistent_target() {
+        let temp_dir = TempDir::new().unwrap();
+        let from_file = temp_dir.path().join("test_file.txt");
+        fs::write(&from_file, "test content").unwrap();
+
+        let to_file = temp_dir.path().join("link_file.txt");
+        let mut ops = Vec::new();
+        link_file_or_dir(
+            Cow::Borrowed(from_file.to_str().unwrap()),
+            Cow::Borrowed(to_file.to_str().unwrap()),
+            &mut ops,
+        )
+        .unwrap();
+
+        assert!(!ops.is_empty());
+        assert!(ops.iter().any(|op| matches!(op, Op::Symlink(_, _, _))));
+    }
+
+    #[test]
+    fn test_link_file_or_dir_skip_encrypted() {
+        let temp_dir = TempDir::new().unwrap();
+        let from_file = temp_dir.path().join("test_file.enc");
+        fs::write(&from_file, "encrypted content").unwrap();
+
+        let to_file = temp_dir.path().join("link_file.enc");
+        let mut ops = Vec::new();
+        link_file_or_dir(
+            Cow::Borrowed(from_file.to_str().unwrap()),
+            Cow::Borrowed(to_file.to_str().unwrap()),
+            &mut ops,
+        )
+        .unwrap();
+
+        // Should skip encrypted files
+        assert!(ops.is_empty() || !ops.iter().any(|op| matches!(op, Op::Symlink(_, _, _))));
+    }
+
+    #[test]
+    fn test_execute_with_conflicts() {
+        let ops = vec![
+            Op::Conflict("/conflict1".to_string()),
+            Op::Conflict("/conflict2".to_string()),
+        ];
+        let result = execute(&ops);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_execute_mkdirp() {
+        let temp_dir = TempDir::new().unwrap();
+        let new_dir = temp_dir.path().join("new_subdir");
+        let ops = vec![Op::Mkdirp(new_dir.to_str().unwrap().to_string())];
+        execute(&ops).unwrap();
+        assert!(new_dir.exists());
+        assert!(new_dir.is_dir());
+    }
+
+    #[test]
+    fn test_execute_existed() {
+        let ops = vec![Op::Existed("/existing/path".to_string())];
+        // Should not error, just print info
+        execute(&ops).unwrap();
+    }
+
+    #[test]
+    fn test_execute_symlink() {
+        let temp_dir = TempDir::new().unwrap();
+        let from_file = temp_dir.path().join("source.txt");
+        fs::write(&from_file, "test content").unwrap();
+
+        let to_file = temp_dir.path().join("link.txt");
+        // The symlink uses relative path from the link location to the source
+        let relative = "source.txt".to_string();
+
+        let ops = vec![Op::Symlink(
+            from_file.to_str().unwrap().to_string(),
+            to_file.to_str().unwrap().to_string(),
+            relative,
+        )];
+        execute(&ops).unwrap();
+        // Check that symlink was created
+        assert!(to_file.symlink_metadata().unwrap().is_symlink());
+        // The symlink should resolve to the source file
+        assert!(to_file.exists());
+    }
+
+    #[test]
+    fn test_link_file_or_dir_existing_symlink_same_target() {
+        let temp_dir = TempDir::new().unwrap();
+        let from_file = temp_dir.path().join("source.txt");
+        fs::write(&from_file, "test content").unwrap();
+
+        let to_file = temp_dir.path().join("link.txt");
+        // Create the symlink first
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&from_file, &to_file).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(&from_file, &to_file).unwrap();
+
+        let mut ops = Vec::new();
+        link_file_or_dir(
+            Cow::Borrowed(from_file.to_str().unwrap()),
+            Cow::Borrowed(to_file.to_str().unwrap()),
+            &mut ops,
+        )
+        .unwrap();
+
+        // Should detect as Existed since symlink points to correct target
+        assert!(ops.iter().any(|op| matches!(op, Op::Existed(_))));
+    }
+
+    #[test]
+    fn test_link_file_or_dir_existing_symlink_different_target() {
+        let temp_dir = TempDir::new().unwrap();
+        let from_file = temp_dir.path().join("source.txt");
+        fs::write(&from_file, "test content").unwrap();
+
+        let other_file = temp_dir.path().join("other.txt");
+        fs::write(&other_file, "other content").unwrap();
+
+        let to_file = temp_dir.path().join("link.txt");
+        // Create symlink to other_file (not from_file)
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&other_file, &to_file).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(&other_file, &to_file).unwrap();
+
+        let mut ops = Vec::new();
+        link_file_or_dir(
+            Cow::Borrowed(from_file.to_str().unwrap()),
+            Cow::Borrowed(to_file.to_str().unwrap()),
+            &mut ops,
+        )
+        .unwrap();
+
+        // Should detect as Conflict since symlink points to different target
+        assert!(ops.iter().any(|op| matches!(op, Op::Conflict(_))));
+    }
+
+    #[test]
+    fn test_link_file_or_dir_broken_symlink() {
+        let temp_dir = TempDir::new().unwrap();
+        let from_file = temp_dir.path().join("source.txt");
+        fs::write(&from_file, "test content").unwrap();
+
+        let nonexistent = temp_dir.path().join("nonexistent.txt");
+        let to_file = temp_dir.path().join("broken_link.txt");
+
+        // Create symlink to nonexistent file (broken symlink)
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&nonexistent, &to_file).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(&nonexistent, &to_file).unwrap();
+
+        let mut ops = Vec::new();
+        link_file_or_dir(
+            Cow::Borrowed(from_file.to_str().unwrap()),
+            Cow::Borrowed(to_file.to_str().unwrap()),
+            &mut ops,
+        )
+        .unwrap();
+
+        // Should detect as Conflict for broken symlink
+        assert!(ops.iter().any(|op| matches!(op, Op::Conflict(_))));
+    }
+
+    #[test]
+    fn test_link_file_or_dir_existing_regular_file_conflict() {
+        let temp_dir = TempDir::new().unwrap();
+        let from_file = temp_dir.path().join("source.txt");
+        fs::write(&from_file, "test content").unwrap();
+
+        let to_file = temp_dir.path().join("existing.txt");
+        fs::write(&to_file, "existing content").unwrap();
+
+        let mut ops = Vec::new();
+        link_file_or_dir(
+            Cow::Borrowed(from_file.to_str().unwrap()),
+            Cow::Borrowed(to_file.to_str().unwrap()),
+            &mut ops,
+        )
+        .unwrap();
+
+        // Should detect as Conflict since to_file is a regular file
+        assert!(ops.iter().any(|op| matches!(op, Op::Conflict(_))));
+    }
+
+    #[test]
+    fn test_link_dir_nonexistent_target() {
+        let temp_dir = TempDir::new().unwrap();
+        let from_dir = temp_dir.path().join("source_dir");
+        fs::create_dir(&from_dir).unwrap();
+        fs::write(from_dir.join("file.txt"), "content").unwrap();
+
+        let to_dir = temp_dir.path().join("link_dir");
+
+        let mut ops = Vec::new();
+        link_file_or_dir(
+            Cow::Borrowed(from_dir.to_str().unwrap()),
+            Cow::Borrowed(to_dir.to_str().unwrap()),
+            &mut ops,
+        )
+        .unwrap();
+
+        // Should create symlink for directory
+        assert!(ops.iter().any(|op| matches!(op, Op::Symlink(_, _, _))));
+    }
+
+    #[test]
+    fn test_link_dir_existing_target_recursive() {
+        let temp_dir = TempDir::new().unwrap();
+        let from_dir = temp_dir.path().join("source_dir");
+        fs::create_dir(&from_dir).unwrap();
+        fs::write(from_dir.join("file1.txt"), "content1").unwrap();
+        fs::write(from_dir.join("file2.txt"), "content2").unwrap();
+
+        let to_dir = temp_dir.path().join("target_dir");
+        fs::create_dir(&to_dir).unwrap();
+
+        let mut ops = Vec::new();
+        link_file_or_dir(
+            Cow::Borrowed(from_dir.to_str().unwrap()),
+            Cow::Borrowed(to_dir.to_str().unwrap()),
+            &mut ops,
+        )
+        .unwrap();
+
+        // Should create symlinks for files in directory (recursive linking)
+        let symlink_count = ops
+            .iter()
+            .filter(|op| matches!(op, Op::Symlink(_, _, _)))
+            .count();
+        assert!(symlink_count >= 2);
+    }
+
+    #[test]
+    fn test_link_file_creates_parent_dir() {
+        let temp_dir = TempDir::new().unwrap();
+        let from_file = temp_dir.path().join("source.txt");
+        fs::write(&from_file, "test content").unwrap();
+
+        let to_file = temp_dir.path().join("subdir/nested/link.txt");
+
+        let mut ops = Vec::new();
+        link_file_or_dir(
+            Cow::Borrowed(from_file.to_str().unwrap()),
+            Cow::Borrowed(to_file.to_str().unwrap()),
+            &mut ops,
+        )
+        .unwrap();
+
+        // Should include Mkdirp for parent directory
+        assert!(ops.iter().any(|op| matches!(op, Op::Mkdirp(_))));
+        assert!(ops.iter().any(|op| matches!(op, Op::Symlink(_, _, _))));
+    }
+}

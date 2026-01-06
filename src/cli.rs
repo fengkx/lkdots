@@ -69,3 +69,27 @@ pub fn config() -> Result<Cli> {
 fn test_config_init() {
     println!("{:?}", config().unwrap())
 }
+
+#[test]
+fn test_is_encrypt_cmd() {
+    use clap::Parser;
+    let cli = Cli::parse_from(&["lkdots", "encrypt"]);
+    assert!(cli.is_encrypt_cmd());
+    assert!(!cli.is_decrypt_cmd());
+
+    let cli = Cli::parse_from(&["lkdots", "decrypt"]);
+    assert!(!cli.is_encrypt_cmd());
+    assert!(cli.is_decrypt_cmd());
+
+    let cli = Cli::parse_from(&["lkdots"]);
+    assert!(!cli.is_encrypt_cmd());
+    assert!(!cli.is_decrypt_cmd());
+}
+
+#[test]
+fn test_is_decrypt_cmd() {
+    use clap::Parser;
+    let cli = Cli::parse_from(&["lkdots", "decrypt"]);
+    assert!(cli.is_decrypt_cmd());
+    assert!(!cli.is_encrypt_cmd());
+}

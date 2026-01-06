@@ -53,3 +53,32 @@ fn test_permission() {
     let home_metadata = std::fs::metadata(env!("HOME")).unwrap();
     assert!(home_metadata.is_dir());
 }
+
+#[test]
+fn test_create_symlink() {
+    use std::fs;
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let src_file = temp_dir.path().join("source.txt");
+    fs::write(&src_file, "test content").unwrap();
+
+    let dst_file = temp_dir.path().join("link.txt");
+    let relative = "source.txt";
+
+    // Create symlink
+    create_symlink(
+        src_file.to_str().unwrap(),
+        dst_file.to_str().unwrap(),
+        relative,
+    )
+    .unwrap();
+
+    // Verify symlink was created
+    assert!(dst_file.exists());
+    assert!(dst_file.symlink_metadata().unwrap().is_symlink());
+
+    // Verify symlink points to correct file
+    let target = std::fs::read_link(&dst_file).unwrap();
+    assert_eq!(target, Path::new(relative));
+}

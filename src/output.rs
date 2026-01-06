@@ -40,3 +40,49 @@ pub fn print_path(path: &str) {
 pub fn print_list_item(index: usize, item: &str) {
     println!("  {}. {}", index, item);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_print_success() {
+        print_success("Test success message");
+    }
+
+    #[test]
+    fn test_print_error() {
+        print_error("Test error message");
+    }
+
+    #[test]
+    fn test_print_warning() {
+        print_warning("Test warning message");
+    }
+
+    #[test]
+    fn test_print_info() {
+        print_info("Test info message");
+    }
+
+    #[test]
+    fn test_print_header() {
+        print_header("Test header");
+    }
+
+    #[test]
+    fn test_print_section() {
+        print_section("Test section");
+    }
+
+    #[test]
+    fn test_print_path() {
+        print_path("/test/path");
+    }
+
+    #[test]
+    fn test_print_list_item() {
+        print_list_item(1, "First item");
+        print_list_item(2, "Second item");
+    }
+}

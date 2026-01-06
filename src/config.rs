@@ -164,3 +164,135 @@ impl Config<'_> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_entry_match_platform() {
+        let entry = Entry {
+            from: Cow::Owned("test".to_string()),
+            to: Cow::Owned("test".to_string()),
+            platforms: Cow::Owned(vec![Platform::Linux, Platform::Darwin]),
+            encrypt: false,
+        };
+        // This will match on Linux/Darwin but not Windows
+        let matches = entry.match_platform();
+        // On macOS, this should match
+        #[cfg(target_os = "macos")]
+        assert!(matches);
+        #[cfg(target_os = "linux")]
+        assert!(matches);
+        #[cfg(target_os = "windows")]
+        assert!(!matches);
+    }
+
+    #[test]
+    fn test_config_from() {
+        let config_file = ConfigFileStruct {
+            entries: vec![
+                ConfigFileEntry {
+                    from: "test1".to_string(),
+                    to: "test2".to_string(),
+                    platforms: Some(vec![Platform::Linux]),
+                    encrypt: Some(true),
+                },
+                ConfigFileEntry {
+                    from: "test3".to_string(),
+                    to: "test4".to_string(),
+                    platforms: None,
+                    encrypt: None,
+                },
+            ],
+            gitignore: ".gitignore".to_string(),
+        };
+
+        let config: Config = config_file.into();
+        assert_eq!(config.entries.len(), 2);
+        assert_eq!(config.gitignore, ".gitignore");
+        assert!(config.entries[0].encrypt);
+        assert!(!config.entries[1].encrypt);
+        // Default platforms should include all
+        assert_eq!(config.entries[1].platforms.len(), 3);
+    }
+
+    #[test]
+    fn test_config_validate_empty_entries() {
+        let config = Config {
+            entries: vec![],
+            gitignore: ".gitignore".to_string(),
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_config_validate_nonexistent_path() {
+        let config = Config {
+            entries: vec![Entry {
+                from: Cow::Owned("/nonexistent/path".to_string()),
+                to: Cow::Owned("~/test".to_string()),
+                platforms: Cow::Owned(vec![Platform::Linux]),
+                encrypt: false,
+            }],
+            gitignore: ".gitignore".to_string(),
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_config_validate_empty_to() {
+        let config = Config {
+            entries: vec![Entry {
+                from: Cow::Owned("./tests/test-data".to_string()),
+                to: Cow::Owned("".to_string()),
+                platforms: Cow::Owned(vec![Platform::Linux]),
+                encrypt: false,
+            }],
+            gitignore: ".gitignore".to_string(),
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_config_validate_success() {
+        let config = Config {
+            entries: vec![Entry {
+                from: Cow::Owned("./tests/test-data".to_string()),
+                to: Cow::Owned("~/test".to_string()),
+                platforms: Cow::Owned(vec![Platform::Linux]),
+                encrypt: false,
+            }],
+            gitignore: ".gitignore".to_string(),
+        };
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_entry_create_ops() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        // Create a temporary directory structure for testing
+        let temp_dir = TempDir::new().unwrap();
+        let test_file = temp_dir.path().join("test_file.txt");
+        fs::write(&test_file, "test content").unwrap();
+
+        let entry = Entry {
+            from: Cow::Owned(test_file.to_str().unwrap().to_string()),
+            to: Cow::Owned(
+                temp_dir
+                    .path()
+                    .join("link.txt")
+                    .to_str()
+                    .unwrap()
+                    .to_string(),
+            ),
+            platforms: Cow::Owned(vec![Platform::Linux]),
+            encrypt: false,
+        };
+        let base_dir = temp_dir.path();
+        let ops = entry.create_ops(base_dir).unwrap();
+        assert!(!ops.is_empty());
+    }
+}

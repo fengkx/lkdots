@@ -61,8 +61,13 @@ fn main() -> Result<()> {
     let entries = &config.entries;
 
     if cfg.is_encrypt_cmd() || cfg.is_decrypt_cmd() {
-        let phrase = SecretString::from(prompt_password("Passphrase: ")?);
-        if cfg.is_encrypt_cmd() {
+        let env_pass = std::env::var("LKDOTS_PASSPHRASE").ok();
+        let phrase = if let Some(p) = env_pass.clone() {
+            SecretString::from(p)
+        } else {
+            SecretString::from(prompt_password("Passphrase: ")?)
+        };
+        if cfg.is_encrypt_cmd() && env_pass.is_none() {
             let mut again_phrase = prompt_password("Input passphrase again: ")?;
             if !constant_time_eq(phrase.expose_secret(), &again_phrase) {
                 again_phrase.zeroize();
@@ -193,8 +198,17 @@ fn truncate_path(s: &str, max_len: usize) -> String {
     }
 }
 
-/// Encrypt files in parallel with progress bar
-fn encrypt_files_parallel(files: Vec<PathBuf>, passphrase: Arc<SecretString>) -> Result<()> {
+/// Shared parallel file processor with progress bar
+fn process_files_parallel<F>(
+    files: Vec<PathBuf>,
+    passphrase: Arc<SecretString>,
+    op: F,
+    kind_display: &str,
+    success_verb: &str,
+) -> Result<()>
+where
+    F: Fn(&str, &SecretString) -> Result<()> + Sync + Send,
+{
     let total = files.len();
     if total == 0 {
         return Ok(());
@@ -213,58 +227,32 @@ fn encrypt_files_parallel(files: Vec<PathBuf>, passphrase: Arc<SecretString>) ->
     files.par_iter().try_for_each(|file_path| -> Result<()> {
         let file_str = file_path.to_string_lossy();
         let pb = pb.clone();
+        let passphrase = Arc::clone(&passphrase);
 
         // Update progress bar message
         let display_name = truncate_path(&file_str, 50);
         pb.set_message(display_name);
 
-        // Execute encryption
-        encrypt_file(&file_str, &passphrase)?;
+        // Execute operation
+        op(&file_str, passphrase.as_ref())?;
         pb.inc(1);
         Ok(())
     })?;
 
-    pb.finish_with_message("Encryption completed");
-    print_success(&format!("Successfully encrypted {} file(s)", total));
+    pb.finish_with_message(format!("{} completed", kind_display));
+    print_success(&format!("Successfully {} {} file(s)", success_verb, total));
 
     Ok(())
 }
 
+/// Encrypt files in parallel with progress bar
+fn encrypt_files_parallel(files: Vec<PathBuf>, passphrase: Arc<SecretString>) -> Result<()> {
+    process_files_parallel(files, passphrase, encrypt_file, "Encryption", "encrypted")
+}
+
 /// Decrypt files in parallel with progress bar
 fn decrypt_files_parallel(files: Vec<PathBuf>, passphrase: Arc<SecretString>) -> Result<()> {
-    let total = files.len();
-    if total == 0 {
-        return Ok(());
-    }
-
-    // Create progress bar
-    let pb = ProgressBar::new(total as u64);
-    pb.set_style(
-        ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} files ({percent}%) {msg}")
-            .unwrap()
-            .progress_chars("#>-"),
-    );
-
-    // Process files in parallel (ProgressBar is thread-safe and can be cloned directly)
-    files.par_iter().try_for_each(|file_path| -> Result<()> {
-        let file_str = file_path.to_string_lossy();
-        let pb = pb.clone();
-
-        // Update progress bar message
-        let display_name = truncate_path(&file_str, 50);
-        pb.set_message(display_name);
-
-        // Execute decryption
-        decrypt_file(&file_str, &passphrase)?;
-        pb.inc(1);
-        Ok(())
-    })?;
-
-    pb.finish_with_message("Decryption completed");
-    print_success(&format!("Successfully decrypted {} file(s)", total));
-
-    Ok(())
+    process_files_parallel(files, passphrase, decrypt_file, "Decryption", "decrypted")
 }
 
 #[cfg(test)]
@@ -450,5 +438,72 @@ mod tests {
         // Should return Ok for empty files
         let result = decrypt_files_parallel(files, passphrase);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_process_files_parallel_success() {
+        use age::secrecy::SecretString;
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let f1 = temp_dir.path().join("a.txt");
+        let f2 = temp_dir.path().join("b.txt");
+        std::fs::write(&f1, "1").unwrap();
+        std::fs::write(&f2, "2").unwrap();
+
+        let counter = Arc::new(AtomicUsize::new(0));
+        let passphrase = Arc::new(SecretString::new("pwd".to_string().into_boxed_str()));
+
+        let op_counter = Arc::clone(&counter);
+        let result = process_files_parallel(
+            vec![f1, f2],
+            Arc::clone(&passphrase),
+            move |path, secret| {
+                assert_eq!(secret.expose_secret(), "pwd");
+                assert!(std::path::Path::new(path).exists());
+                op_counter.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+            "Test",
+            "tested",
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(counter.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn test_process_files_parallel_failure() {
+        use age::secrecy::SecretString;
+        use std::sync::Arc;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let f1 = temp_dir.path().join("ok.txt");
+        let f2 = temp_dir.path().join("fail.txt");
+        std::fs::write(&f1, "ok").unwrap();
+        std::fs::write(&f2, "fail").unwrap();
+
+        let passphrase = Arc::new(SecretString::new("pwd".to_string().into_boxed_str()));
+
+        let result = process_files_parallel(
+            vec![f1, f2],
+            passphrase,
+            |path, _| {
+                if path.contains("fail") {
+                    Err(anyhow::anyhow!("expected failure"))
+                } else {
+                    Ok(())
+                }
+            },
+            "Test",
+            "tested",
+        );
+
+        assert!(result.is_err());
     }
 }

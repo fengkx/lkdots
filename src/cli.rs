@@ -65,6 +65,12 @@ pub fn config() -> Result<Cli> {
     Ok(args)
 }
 
+/// Test helper to create Cli from args without sys.argv
+pub fn config_from_args(args: &[&str]) -> Result<Cli> {
+    let cli = Cli::parse_from(args);
+    Ok(cli)
+}
+
 #[test]
 fn test_config_init() {
     println!("{:?}", config().unwrap())

@@ -199,7 +199,7 @@ mod tests {
         fs::write(&test_file, "test content").unwrap();
 
         let gitignore_path = temp_dir.path().join(".gitignore");
-        
+
         // Create existing gitignore with lkdots section
         let existing_content = format!(
             "# existing entries\n*.log\n\n{}\nold_entry/*\n!old_entry/*.enc\n{}\n",
@@ -234,7 +234,7 @@ mod tests {
         fs::write(&test_file, "test content").unwrap();
 
         let gitignore_path = temp_dir.path().join(".gitignore");
-        
+
         // Create existing gitignore with lkdots section
         let existing_content = format!(
             "{}\nold_entry/*\n{}\n",
@@ -259,10 +259,10 @@ mod tests {
     #[test]
     fn test_write_gitignore_multiple_encrypt_entries() {
         let temp_dir = TempDir::new().unwrap();
-        
+
         let test_file1 = temp_dir.path().join("test1.txt");
         fs::write(&test_file1, "content1").unwrap();
-        
+
         let test_file2 = temp_dir.path().join("test2.txt");
         fs::write(&test_file2, "content2").unwrap();
 
@@ -303,7 +303,7 @@ mod tests {
         fs::write(&test_file, "test content").unwrap();
 
         let gitignore_path = temp_dir.path().join(".gitignore");
-        
+
         // Create existing gitignore with various content
         let existing_content = "# My project ignores\n*.log\nnode_modules/\n.env\n";
         fs::write(&gitignore_path, existing_content).unwrap();

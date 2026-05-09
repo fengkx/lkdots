@@ -1,4 +1,7 @@
-use crate::operations::{Op, link_file_or_dir};
+use crate::{
+    operations::{Op, link_file_or_dir},
+    projection::Projection,
+};
 use anyhow::{Context, Result};
 use log::debug;
 use serde::{Deserialize, Serialize};
@@ -49,8 +52,26 @@ pub struct ConfigFileEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProjectionDriver {
+    Properties,
+    Json,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfigFileProjection {
+    pub name: String,
+    pub driver: ProjectionDriver,
+    pub source: String,
+    pub target: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfigFileStruct {
+    #[serde(default)]
     pub entries: Vec<ConfigFileEntry>,
+    #[serde(default)]
+    pub projections: Vec<ConfigFileProjection>,
     pub gitignore: String,
 }
 
@@ -89,6 +110,7 @@ impl Entry<'_> {
 #[derive(Debug, Clone)]
 pub struct Config<'a> {
     pub entries: Vec<Entry<'a>>,
+    pub projections: Vec<Projection>,
     pub gitignore: String,
 }
 
@@ -96,6 +118,16 @@ impl From<ConfigFileStruct> for Config<'static> {
     fn from(c: ConfigFileStruct) -> Self {
         Config {
             gitignore: c.gitignore,
+            projections: c
+                .projections
+                .into_iter()
+                .map(|p| Projection {
+                    name: p.name,
+                    driver: p.driver,
+                    source: p.source,
+                    target: p.target,
+                })
+                .collect(),
             entries: c
                 .entries
                 .into_iter()
@@ -118,9 +150,9 @@ impl Config<'_> {
     pub fn validate(&self) -> Result<()> {
         use std::path::Path;
 
-        if self.entries.is_empty() {
+        if self.entries.is_empty() && self.projections.is_empty() {
             return Err(anyhow::anyhow!(
-                "Configuration error: No entries found in config file"
+                "Configuration error: No entries or projections found in config file"
             ));
         }
 
@@ -158,6 +190,32 @@ impl Config<'_> {
                         self.gitignore
                     ));
                 }
+            }
+        }
+
+        for (idx, projection) in self.projections.iter().enumerate() {
+            if projection.name.trim().is_empty() {
+                return Err(anyhow::anyhow!(
+                    "Configuration error in projection #{}: Name is empty",
+                    idx + 1
+                ));
+            }
+
+            let expanded_source = shellexpand::tilde(&projection.source);
+            if !Path::new(expanded_source.as_ref()).exists() {
+                return Err(anyhow::anyhow!(
+                    "Configuration error in projection #{}: Source path does not exist\n\
+                    Path: {}",
+                    idx + 1,
+                    projection.source
+                ));
+            }
+
+            if projection.target.trim().is_empty() {
+                return Err(anyhow::anyhow!(
+                    "Configuration error in projection #{}: Target path is empty",
+                    idx + 1
+                ));
             }
         }
 
@@ -205,6 +263,7 @@ mod tests {
                     encrypt: None,
                 },
             ],
+            projections: vec![],
             gitignore: ".gitignore".to_string(),
         };
 
@@ -221,6 +280,7 @@ mod tests {
     fn test_config_validate_empty_entries() {
         let config = Config {
             entries: vec![],
+            projections: vec![],
             gitignore: ".gitignore".to_string(),
         };
         assert!(config.validate().is_err());
@@ -235,6 +295,7 @@ mod tests {
                 platforms: Cow::Owned(vec![Platform::Linux]),
                 encrypt: false,
             }],
+            projections: vec![],
             gitignore: ".gitignore".to_string(),
         };
         assert!(config.validate().is_err());
@@ -249,6 +310,7 @@ mod tests {
                 platforms: Cow::Owned(vec![Platform::Linux]),
                 encrypt: false,
             }],
+            projections: vec![],
             gitignore: ".gitignore".to_string(),
         };
         assert!(config.validate().is_err());
@@ -263,6 +325,7 @@ mod tests {
                 platforms: Cow::Owned(vec![Platform::Linux]),
                 encrypt: false,
             }],
+            projections: vec![],
             gitignore: ".gitignore".to_string(),
         };
         assert!(config.validate().is_ok());

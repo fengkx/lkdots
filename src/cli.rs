@@ -39,6 +39,8 @@ impl Cli {
         match self.cmd.as_ref() {
             Some(SubCommand::Encrypt) => true,
             Some(SubCommand::Decrypt) => false,
+            Some(SubCommand::Apply) => false,
+            Some(SubCommand::Capture) => false,
             None => false,
         }
     }
@@ -46,13 +48,22 @@ impl Cli {
         match self.cmd.as_ref() {
             Some(SubCommand::Encrypt) => false,
             Some(SubCommand::Decrypt) => true,
+            Some(SubCommand::Apply) => false,
+            Some(SubCommand::Capture) => false,
             None => false,
         }
+    }
+    pub fn is_capture_cmd(&self) -> bool {
+        matches!(self.cmd.as_ref(), Some(SubCommand::Capture))
     }
 }
 
 #[derive(Subcommand, PartialEq, Debug)]
 pub enum SubCommand {
+    /// apply symlinks and projections to target files
+    Apply,
+    /// capture projection values from target files
+    Capture,
     /// encrypt files to *.enc file
     Encrypt,
     /// decrypt files to original position

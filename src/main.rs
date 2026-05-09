@@ -5,6 +5,7 @@ mod gitignore;
 mod operations;
 mod output;
 mod path_util;
+mod projection;
 mod symlink_util;
 
 use age::secrecy::{ExposeSecret, SecretString};
@@ -19,9 +20,11 @@ use std::{
     fs::read_to_string,
     io::ErrorKind,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
-use subtle::ConstantTimeEq;
 use walkdir::WalkDir;
 use zeroize::Zeroize;
 
@@ -30,11 +33,35 @@ use crate::{
     crypto::{decrypt_file, encrypt_file},
     operations::{Op, execute},
     output::{print_info, print_success},
+    projection::{ProjectionAction, run_all as run_projections},
 };
 use colored::*;
 
+static INTERRUPTED: AtomicBool = AtomicBool::new(false);
+
+#[cfg(unix)]
+fn setup_signal_handlers() {
+    use libc::{SIG_IGN, SIGPIPE, signal};
+
+    // Ignore SIGPIPE to prevent crash when writing to closed pipe
+    unsafe {
+        signal(SIGPIPE, SIG_IGN);
+    }
+}
+
+#[cfg(windows)]
+fn setup_signal_handlers() {
+    // On Windows, console handler is set by ctrlc crate
+}
+
 fn main() -> Result<()> {
     env_logger::init();
+
+    setup_signal_handlers();
+
+    ctrlc::set_handler(|| {
+        INTERRUPTED.store(true, Ordering::SeqCst);
+    })?;
 
     let cfg = cli::config()?;
     let cfg_str = read_to_string(&cfg.config);
@@ -59,6 +86,16 @@ fn main() -> Result<()> {
 
     let base_dir = get_dir(Path::new(&cfg.config))?;
     let entries = &config.entries;
+
+    if cfg.is_capture_cmd() {
+        run_projections(
+            &config.projections,
+            base_dir,
+            ProjectionAction::Capture,
+            cfg.simulate,
+        )?;
+        return Ok(());
+    }
 
     if cfg.is_encrypt_cmd() || cfg.is_decrypt_cmd() {
         let env_pass = std::env::var("LKDOTS_PASSPHRASE").ok();
@@ -128,19 +165,44 @@ fn main() -> Result<()> {
             .map(|ops| -> Result<()> { execute(ops) })
             .collect::<Result<()>>()?;
     }
+    run_projections(
+        &config.projections,
+        base_dir,
+        ProjectionAction::Apply,
+        cfg.simulate,
+    )?;
     crate::gitignore::write_gitignore(&config, cfg.simulate)?;
     Ok(())
 }
 
 /// Constant-time string comparison to prevent timing attacks
-/// Even if passwords don't match, the full comparison operation is performed
+/// Compares all bytes regardless of whether lengths differ to prevent
+/// timing attacks that could leak password length information
 fn constant_time_eq(a: &str, b: &str) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
+    let a_bytes = a.as_bytes();
+    let b_bytes = b.as_bytes();
+
+    // Always compare all bytes to prevent timing attacks
+    // Use the shorter length for the comparison loop to avoid out-of-bounds
+    let len = a_bytes.len().min(b_bytes.len());
 
     // Use subtle library for constant-time comparison
-    a.as_bytes().ct_eq(b.as_bytes()).unwrap_u8() == 1
+    // First compare the length portion (constant time for lengths up to min)
+    let len_match = if a_bytes.len() == b_bytes.len() {
+        true
+    } else {
+        false
+    };
+
+    // Compare all bytes up to the shorter length in constant time
+    let mut result: u8 = 0;
+    for i in 0..len {
+        result |= a_bytes[i] ^ b_bytes[i];
+    }
+
+    // result is 0 only if all compared bytes are equal
+    // len_match ensures entire strings match only if lengths are equal
+    len_match && result == 0
 }
 
 /// Collect list of files that need to be encrypted or decrypted
@@ -225,6 +287,10 @@ where
 
     // Process files in parallel (ProgressBar is thread-safe and can be cloned directly)
     files.par_iter().try_for_each(|file_path| -> Result<()> {
+        if INTERRUPTED.load(Ordering::SeqCst) {
+            return Err(anyhow!("Operation cancelled by user"));
+        }
+
         let file_str = file_path.to_string_lossy();
         let pb = pb.clone();
         let passphrase = Arc::clone(&passphrase);
@@ -267,6 +333,28 @@ mod tests {
         assert!(!constant_time_eq("abcd", "abc"));
         assert!(constant_time_eq("", ""));
         assert!(!constant_time_eq("a", ""));
+    }
+
+    #[test]
+    fn test_constant_time_eq_same_length_diff_content() {
+        assert!(!constant_time_eq("abc", "xyz"));
+        assert!(!constant_time_eq("aaa", "bbb"));
+        assert!(!constant_time_eq("123", "456"));
+    }
+
+    #[test]
+    fn test_constant_time_eq_different_lengths() {
+        assert!(!constant_time_eq("a", "ab"));
+        assert!(!constant_time_eq("ab", "a"));
+        assert!(!constant_time_eq("", "abc"));
+        assert!(!constant_time_eq("abc", ""));
+    }
+
+    #[test]
+    fn test_constant_time_eq_partial_match() {
+        assert!(!constant_time_eq("abc", "abd"));
+        assert!(!constant_time_eq("hello", "hella"));
+        assert!(!constant_time_eq("test", "text"));
     }
 
     #[test]

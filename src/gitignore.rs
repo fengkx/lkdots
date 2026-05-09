@@ -136,6 +136,7 @@ mod tests {
                 platforms: Cow::Owned(vec![Platform::Linux]),
                 encrypt,
             }],
+            projections: vec![],
             gitignore: temp_dir
                 .path()
                 .join(".gitignore")
@@ -181,6 +182,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = Config {
             entries: vec![],
+            projections: vec![],
             gitignore: temp_dir
                 .path()
                 .join(".gitignore")
@@ -214,6 +216,7 @@ mod tests {
                 platforms: Cow::Owned(vec![Platform::Linux]),
                 encrypt: true,
             }],
+            projections: vec![],
             gitignore: gitignore_path.to_str().unwrap().to_string(),
         };
 
@@ -249,6 +252,7 @@ mod tests {
                 platforms: Cow::Owned(vec![Platform::Linux]),
                 encrypt: true,
             }],
+            projections: vec![],
             gitignore: gitignore_path.to_str().unwrap().to_string(),
         };
 
@@ -283,6 +287,7 @@ mod tests {
                     encrypt: true,
                 },
             ],
+            projections: vec![],
             gitignore: gitignore_path.to_str().unwrap().to_string(),
         };
 
@@ -315,6 +320,7 @@ mod tests {
                 platforms: Cow::Owned(vec![Platform::Linux]),
                 encrypt: true,
             }],
+            projections: vec![],
             gitignore: gitignore_path.to_str().unwrap().to_string(),
         };
 

@@ -1,7 +1,6 @@
 use crate::config::Config;
-use crate::path_util::{pathbuf_to_str, relative_path};
+use crate::path_util::{FileModePolicy, atomic_write, pathbuf_to_str, relative_path};
 use anyhow::{Context, Result};
-use atomicwrites::{AllowOverwrite, AtomicFile};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, Write};
@@ -88,30 +87,25 @@ pub fn write_gitignore(cfg: &Config, simulate: bool) -> Result<()> {
         return Ok(());
     }
 
-    // Atomic write: use atomicwrites crate for safe atomic file operations
-    let af = AtomicFile::new(gitignore_path_ref, AllowOverwrite);
-    af.write(|f| {
+    atomic_write(gitignore_path_obj, FileModePolicy::PreserveExisting, |f| {
         // Write existing content (outside lkdots section)
         for line in &lines {
-            writeln!(f, "{}", line)?;
+            writeln!(f, "{line}")?;
         }
 
         // Write lkdots section if there are entries
         if !new_entries.is_empty() || lkdots_start_idx.is_some() {
-            writeln!(f, "{}", GITIGNORE_START_MARKER)?;
+            writeln!(f, "{GITIGNORE_START_MARKER}")?;
             for entry in &new_entries {
-                writeln!(f, "{}", entry)?;
+                writeln!(f, "{entry}")?;
             }
-            writeln!(f, "{}", GITIGNORE_END_MARKER)?;
+            writeln!(f, "{GITIGNORE_END_MARKER}")?;
         }
 
-        Ok::<(), std::io::Error>(())
+        Ok(())
     })
     .with_context(|| {
-        format!(
-            "Failed to atomically write gitignore file: {:?}",
-            gitignore_path_ref
-        )
+        format!("Failed to atomically write gitignore file: {gitignore_path_ref:?}")
     })?;
 
     Ok(())

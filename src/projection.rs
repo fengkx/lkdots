@@ -1,6 +1,6 @@
 use crate::config::ProjectionDriver;
+use crate::path_util::{FileModePolicy, atomic_write};
 use anyhow::{Context, Result, anyhow};
-use atomicwrites::{AllowOverwrite, AtomicFile};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 use std::{
     collections::{BTreeMap, BTreeSet, HashSet},
@@ -96,7 +96,7 @@ fn atomic_write_if_changed(
         return Ok(());
     }
 
-    if let Some(parent) = path.parent() {
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         fs::create_dir_all(parent)?;
     }
 
@@ -110,15 +110,8 @@ fn atomic_write_if_changed(
         }
     }
 
-    let existing_permissions = fs::metadata(path).ok().map(|m| m.permissions());
-
-    let file = AtomicFile::new(path, AllowOverwrite);
-    file.write(|writer| {
-        writer.write_all(content.as_bytes())?;
-        if let Some(perms) = existing_permissions.as_ref() {
-            writer.set_permissions(perms.clone())?;
-        }
-        writer.sync_all()
+    atomic_write(path, FileModePolicy::PreserveExisting, |writer| {
+        writer.write_all(content.as_bytes())
     })
     .with_context(|| format!("Failed to write {}", path.display()))?;
     Ok(())

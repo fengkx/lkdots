@@ -9,7 +9,7 @@ use std::{
     path::{Path, PathBuf},
     time::SystemTime,
 };
-use toml::Value as TomlValue;
+use toml_edit::{DocumentMut, Item as TomlItem, TableLike as TomlTableLike, Value as TomlValue};
 
 #[derive(Debug, Clone)]
 pub struct Projection {
@@ -51,6 +51,12 @@ impl Projection {
             }
             (ProjectionDriver::Json, ProjectionAction::Capture) => {
                 capture_json(self, base_dir, simulate)
+            }
+            (ProjectionDriver::Toml, ProjectionAction::Apply) => {
+                apply_toml(self, base_dir, simulate)
+            }
+            (ProjectionDriver::Toml, ProjectionAction::Capture) => {
+                capture_toml(self, base_dir, simulate)
             }
         }
     }
@@ -104,9 +110,17 @@ fn atomic_write_if_changed(
         }
     }
 
+    let existing_permissions = fs::metadata(path).ok().map(|m| m.permissions());
+
     let file = AtomicFile::new(path, AllowOverwrite);
-    file.write(|writer| writer.write_all(content.as_bytes()))
-        .with_context(|| format!("Failed to write {}", path.display()))?;
+    file.write(|writer| {
+        writer.write_all(content.as_bytes())?;
+        if let Some(perms) = existing_permissions.as_ref() {
+            writer.set_permissions(perms.clone())?;
+        }
+        writer.sync_all()
+    })
+    .with_context(|| format!("Failed to write {}", path.display()))?;
     Ok(())
 }
 
@@ -114,14 +128,21 @@ fn atomic_write_if_changed(
 struct FileSnapshot {
     len: u64,
     modified: Option<SystemTime>,
+    #[cfg(unix)]
+    ino: u64,
 }
 
 impl FileSnapshot {
     fn read(path: &Path) -> Result<Option<Self>> {
+        #[cfg(unix)]
+        use std::os::unix::fs::MetadataExt;
+
         match fs::metadata(path) {
             Ok(metadata) => Ok(Some(Self {
                 len: metadata.len(),
                 modified: metadata.modified().ok(),
+                #[cfg(unix)]
+                ino: metadata.ino(),
             })),
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(err) => Err(err).with_context(|| format!("Failed to stat {}", path.display())),
@@ -150,7 +171,7 @@ fn capture_properties(projection: &Projection, base_dir: &Path, simulate: bool) 
     let target = fs::read_to_string(&target_path)
         .with_context(|| format!("Failed to read {}", target_path.display()))?;
     let captured = capture_properties_values(&target, &wanted)?;
-    let next = properties_source_to_toml(&captured)?;
+    let next = properties_source_to_text(&captured);
     atomic_write_if_changed(
         &source_path,
         FileSnapshot::read(&source_path)?,
@@ -162,35 +183,43 @@ fn capture_properties(projection: &Projection, base_dir: &Path, simulate: bool) 
 fn read_properties_source(path: &Path) -> Result<BTreeMap<String, String>> {
     let content =
         fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
-    let value: TomlValue = toml::from_str(&content)
-        .with_context(|| format!("Failed to parse properties source {}", path.display()))?;
-    let values = value
-        .get("values")
-        .and_then(TomlValue::as_table)
-        .ok_or_else(|| anyhow!("Properties projection source must contain a [values] table"))?;
-
     let mut result = BTreeMap::new();
-    for (key, value) in values {
-        let value = value
-            .as_str()
-            .ok_or_else(|| anyhow!("Properties value for key '{}' must be a string", key))?;
-        result.insert(key.to_string(), value.to_string());
+    for (line_number, line) in content.lines().enumerate() {
+        let trimmed = line.trim_start();
+        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with(';') {
+            continue;
+        }
+
+        let Some((raw_key, raw_value)) = trimmed.split_once('=') else {
+            return Err(anyhow!(
+                "Invalid properties source line {} in {}: expected key=value",
+                line_number + 1,
+                path.display()
+            ));
+        };
+        let key = raw_key.trim();
+        if key.is_empty() {
+            return Err(anyhow!(
+                "Invalid properties source line {} in {}: key is empty",
+                line_number + 1,
+                path.display()
+            ));
+        }
+        result.insert(key.to_string(), raw_value.trim().to_string());
     }
     Ok(result)
 }
 
-fn properties_source_to_toml(values: &BTreeMap<String, String>) -> Result<String> {
-    let mut table = toml::map::Map::new();
-    let mut value_table = toml::map::Map::new();
-    for (key, value) in values {
-        value_table.insert(key.clone(), TomlValue::String(value.clone()));
-    }
-    table.insert("values".to_string(), TomlValue::Table(value_table));
-    let mut content = toml::to_string_pretty(&TomlValue::Table(table))?;
+fn properties_source_to_text(values: &BTreeMap<String, String>) -> String {
+    let mut content = values
+        .iter()
+        .map(|(key, value)| format!("{}={}", key, value))
+        .collect::<Vec<_>>()
+        .join("\n");
     if !content.ends_with('\n') {
         content.push('\n');
     }
-    Ok(content)
+    content
 }
 
 fn reject_secret_keys<'a>(keys: impl IntoIterator<Item = &'a String>) -> Result<()> {
@@ -289,7 +318,9 @@ fn apply_json(projection: &Projection, base_dir: &Path, simulate: bool) -> Resul
         None => JsonValue::Object(JsonMap::new()),
     };
 
-    merge_json(&mut target, &source)?;
+    if !merge_json(&mut target, &source)? {
+        return Ok(());
+    }
     let next = format!("{}\n", serde_json::to_string_pretty(&target)?);
     atomic_write_if_changed(&target_path, before, &next, simulate)
 }
@@ -323,23 +354,29 @@ fn read_json_file(path: &Path) -> Result<JsonValue> {
     serde_json::from_str(&content).with_context(|| format!("Failed to parse {}", path.display()))
 }
 
-fn merge_json(target: &mut JsonValue, source: &JsonValue) -> Result<()> {
+fn merge_json(target: &mut JsonValue, source: &JsonValue) -> Result<bool> {
     match (target, source) {
         (JsonValue::Object(target_object), JsonValue::Object(source_object)) => {
+            let mut changed = false;
             for (key, source_value) in source_object {
                 if let Some(target_value) = target_object.get_mut(key) {
-                    merge_json(target_value, source_value)
+                    changed |= merge_json(target_value, source_value)
                         .with_context(|| format!("Failed to merge JSON object at key '{}'", key))?;
                 } else {
                     target_object.insert(key.clone(), source_value.clone());
+                    changed = true;
                 }
             }
-            Ok(())
+            Ok(changed)
         }
         (_, JsonValue::Object(_)) => Err(anyhow!("Target JSON path must be an object")),
         (target_value, source_value) => {
-            *target_value = source_value.clone();
-            Ok(())
+            if target_value == source_value {
+                Ok(false)
+            } else {
+                *target_value = source_value.clone();
+                Ok(true)
+            }
         }
     }
 }
@@ -398,4 +435,297 @@ fn set_json_path(target: &mut JsonValue, path: &[String], value: JsonValue) -> R
         .ok_or_else(|| anyhow!("Failed to create JSON object path"))?;
     object.insert(path[path.len() - 1].clone(), value);
     Ok(())
+}
+
+fn apply_toml(projection: &Projection, base_dir: &Path, simulate: bool) -> Result<()> {
+    let source_path = expand_path(&projection.source, base_dir);
+    let target_path = expand_path(&projection.target, base_dir);
+    let source = read_toml_document(&source_path)?;
+    let before = FileSnapshot::read(&target_path)?;
+    let mut target = match read_to_string_if_exists(&target_path)? {
+        Some(content) => content
+            .parse::<DocumentMut>()
+            .with_context(|| format!("Failed to parse {}", target_path.display()))?,
+        None => DocumentMut::new(),
+    };
+
+    if !merge_toml_table(target.as_table_mut(), source.as_table(), false)? {
+        return Ok(());
+    }
+
+    let mut next = target.to_string();
+    if !next.is_empty() && !next.ends_with('\n') {
+        next.push('\n');
+    }
+    atomic_write_if_changed(&target_path, before, &next, simulate)
+}
+
+fn capture_toml(projection: &Projection, base_dir: &Path, simulate: bool) -> Result<()> {
+    let source_path = expand_path(&projection.source, base_dir);
+    let target_path = expand_path(&projection.target, base_dir);
+    let mut source = read_toml_document(&source_path)?;
+    let target = read_toml_document(&target_path)?;
+
+    if !capture_toml_table(
+        source.as_table_mut(),
+        target.as_table(),
+        false,
+        &mut Vec::new(),
+    )? {
+        return Ok(());
+    }
+
+    let mut next = source.to_string();
+    if !next.is_empty() && !next.ends_with('\n') {
+        next.push('\n');
+    }
+    atomic_write_if_changed(
+        &source_path,
+        FileSnapshot::read(&source_path)?,
+        &next,
+        simulate,
+    )
+}
+
+fn read_toml_document(path: &Path) -> Result<DocumentMut> {
+    let content =
+        fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
+    content
+        .parse::<DocumentMut>()
+        .with_context(|| format!("Failed to parse {}", path.display()))
+}
+
+fn merge_toml_table(
+    target: &mut dyn TomlTableLike,
+    source: &dyn TomlTableLike,
+    target_is_inline: bool,
+) -> Result<bool> {
+    let mut changed = false;
+
+    for (key, source_item) in source.iter() {
+        if let Some(source_table) = source_item.as_table_like() {
+            if let Some(target_item) = target.get_mut(key) {
+                match target_item {
+                    TomlItem::Table(target_table) => {
+                        changed |= merge_toml_table(target_table, source_table, false)
+                            .with_context(|| {
+                                format!("Failed to merge TOML table at key '{}'", key)
+                            })?;
+                    }
+                    TomlItem::Value(TomlValue::InlineTable(target_table)) => {
+                        changed |= merge_toml_table(target_table, source_table, true)
+                            .with_context(|| {
+                                format!("Failed to merge TOML table at key '{}'", key)
+                            })?;
+                    }
+                    _ => {
+                        return Err(anyhow!(
+                            "Target TOML path must be a table at key '{}'",
+                            key
+                        ));
+                    }
+                }
+            } else {
+                let inserted = if target_is_inline {
+                    TomlItem::Value(toml_item_into_value(source_item)?)
+                } else {
+                    prepare_inserted_toml_item(source_item, target.is_empty())
+                };
+                target.insert(key, inserted);
+                changed = true;
+            }
+        } else if let Some(target_item) = target.get_mut(key) {
+            if !toml_items_equal(target_item, source_item) {
+                replace_toml_item(target_item, source_item, target_is_inline)?;
+                changed = true;
+            }
+        } else {
+            let inserted = if target_is_inline {
+                TomlItem::Value(toml_item_into_value(source_item)?)
+            } else {
+                source_item.clone()
+            };
+            target.insert(key, inserted);
+            changed = true;
+        }
+    }
+
+    Ok(changed)
+}
+
+fn capture_toml_table(
+    source: &mut dyn TomlTableLike,
+    target: &dyn TomlTableLike,
+    source_is_inline: bool,
+    path: &mut Vec<String>,
+) -> Result<bool> {
+    let mut changed = false;
+
+    for (key, source_item) in source.iter_mut() {
+        let key_str = key.get().to_string();
+        path.push(key_str.clone());
+
+        let result = (|| -> Result<bool> {
+            let target_item = target
+                .get(&key_str)
+                .ok_or_else(|| anyhow!("Projection path '{}' not found in target", path.join(".")))?;
+
+            match source_item {
+                TomlItem::Table(source_table) if !source_table.is_empty() => {
+                    let target_table = target_item.as_table_like().ok_or_else(|| {
+                        anyhow!("Target TOML path '{}' must be a table", path.join("."))
+                    })?;
+                    capture_toml_table(source_table, target_table, false, path)
+                }
+                TomlItem::Value(TomlValue::InlineTable(source_table))
+                    if !source_table.is_empty() =>
+                {
+                    let target_table = target_item.as_table_like().ok_or_else(|| {
+                        anyhow!("Target TOML path '{}' must be a table", path.join("."))
+                    })?;
+                    capture_toml_table(source_table, target_table, true, path)
+                }
+                _ => {
+                    if toml_items_equal(source_item, target_item) {
+                        Ok(false)
+                    } else {
+                        replace_toml_item(source_item, target_item, source_is_inline)?;
+                        Ok(true)
+                    }
+                }
+            }
+        })();
+
+        path.pop();
+        changed |= result?;
+    }
+
+    Ok(changed)
+}
+
+fn replace_toml_item(
+    dest: &mut TomlItem,
+    src: &TomlItem,
+    dest_is_inline: bool,
+) -> Result<()> {
+    match (dest, src) {
+        (TomlItem::Value(dest_val), TomlItem::Value(src_val)) => {
+            let mut replacement = src_val.clone();
+            *replacement.decor_mut() = dest_val.decor().clone();
+            *dest_val = replacement;
+            Ok(())
+        }
+        (dest_item, src_item) if dest_is_inline => {
+            let mut replacement = toml_item_into_value(src_item)?;
+            if let TomlItem::Value(dest_val) = dest_item {
+                *replacement.decor_mut() = dest_val.decor().clone();
+            }
+            *dest_item = TomlItem::Value(replacement);
+            Ok(())
+        }
+        (dest_item, src_item) => {
+            *dest_item = src_item.clone();
+            Ok(())
+        }
+    }
+}
+
+fn toml_item_into_value(item: &TomlItem) -> Result<TomlValue> {
+    match item {
+        TomlItem::Value(val) => Ok(val.clone()),
+        TomlItem::Table(table) => {
+            let mut inline = toml_edit::InlineTable::new();
+            for (k, v) in table.iter() {
+                inline.insert(k, toml_item_into_value(v)?);
+            }
+            Ok(TomlValue::InlineTable(inline))
+        }
+        TomlItem::ArrayOfTables(aot) => {
+            let mut array = toml_edit::Array::new();
+            for table in aot.iter() {
+                let mut inline = toml_edit::InlineTable::new();
+                for (k, v) in table.iter() {
+                    inline.insert(k, toml_item_into_value(v)?);
+                }
+                array.push(TomlValue::InlineTable(inline));
+            }
+            Ok(TomlValue::Array(array))
+        }
+        TomlItem::None => Err(anyhow!("Unexpected empty TOML item")),
+    }
+}
+
+fn toml_items_equal(a: &TomlItem, b: &TomlItem) -> bool {
+    match (a, b) {
+        (TomlItem::Value(va), TomlItem::Value(vb)) => toml_values_equal(va, vb),
+        (TomlItem::Table(ta), TomlItem::Table(tb)) => toml_table_likes_equal(ta, tb),
+        (TomlItem::Table(ta), TomlItem::Value(TomlValue::InlineTable(tb)))
+        | (TomlItem::Value(TomlValue::InlineTable(tb)), TomlItem::Table(ta)) => {
+            toml_table_likes_equal(ta, tb)
+        }
+        (TomlItem::ArrayOfTables(aa), TomlItem::ArrayOfTables(ab)) => {
+            aa.len() == ab.len()
+                && aa
+                    .iter()
+                    .zip(ab.iter())
+                    .all(|(ta, tb)| toml_table_likes_equal(ta, tb))
+        }
+        (TomlItem::None, TomlItem::None) => true,
+        _ => false,
+    }
+}
+
+fn toml_values_equal(a: &TomlValue, b: &TomlValue) -> bool {
+    match (a, b) {
+        (TomlValue::String(sa), TomlValue::String(sb)) => sa.value() == sb.value(),
+        (TomlValue::Integer(ia), TomlValue::Integer(ib)) => ia.value() == ib.value(),
+        (TomlValue::Float(fa), TomlValue::Float(fb)) => {
+            fa.value().to_bits() == fb.value().to_bits()
+        }
+        (TomlValue::Boolean(ba), TomlValue::Boolean(bb)) => ba.value() == bb.value(),
+        (TomlValue::Datetime(da), TomlValue::Datetime(db)) => da.value() == db.value(),
+        (TomlValue::Array(aa), TomlValue::Array(ab)) => {
+            aa.len() == ab.len()
+                && aa
+                    .iter()
+                    .zip(ab.iter())
+                    .all(|(xa, xb)| toml_values_equal(xa, xb))
+        }
+        (TomlValue::InlineTable(ta), TomlValue::InlineTable(tb)) => toml_table_likes_equal(ta, tb),
+        _ => false,
+    }
+}
+
+fn toml_table_likes_equal(a: &dyn TomlTableLike, b: &dyn TomlTableLike) -> bool {
+    a.len() == b.len()
+        && a.iter()
+            .all(|(k, va)| b.get(k).is_some_and(|vb| toml_items_equal(va, vb)))
+}
+
+fn prepare_inserted_toml_item(item: &TomlItem, target_is_empty: bool) -> TomlItem {
+    let mut cloned = item.clone();
+    if !target_is_empty {
+        ensure_table_leading_blank_line(&mut cloned);
+    }
+    cloned
+}
+
+fn ensure_table_leading_blank_line(item: &mut TomlItem) {
+    if let TomlItem::Table(table) = item {
+        if table.is_implicit() {
+            if let Some((_, first_child)) = table.iter_mut().next() {
+                ensure_table_leading_blank_line(first_child);
+            }
+            return;
+        }
+        let prefix = table
+            .decor()
+            .prefix()
+            .and_then(|raw| raw.as_str())
+            .unwrap_or("")
+            .to_owned();
+        if !prefix.starts_with('\n') {
+            table.decor_mut().set_prefix(format!("\n{}", prefix));
+        }
+    }
 }

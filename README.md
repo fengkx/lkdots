@@ -82,13 +82,13 @@ Array of managed projections for files that should not be linked wholesale.
 [[projections]]
 name = "npmrc"
 driver = "properties"
-source = "~/dotfiles/projections/npmrc.toml"
+source = "~/dotfiles/npm/npmrc.public"
 target = "~/.npmrc"
 
 [[projections]]
 name = "codex-global-state"
 driver = "json"
-source = "~/dotfiles/projections/codex-global-state.json"
+source = "~/dotfiles/codex/global-state.partial.json"
 target = "~/.codex/.codex-global-state.json"
 ```
 
@@ -100,12 +100,11 @@ back into the source files.
 
 ### properties driver
 
-The source is a TOML file with a `[values]` table:
+The source uses the same line-oriented `key=value` syntax as `.npmrc`:
 
-```toml
-[values]
-registry = "https://registry.npmjs.org/"
-"@tencent:registry" = "https://mirrors.tencent.com/npm/"
+```ini
+registry=https://registry.npmjs.org/
+@tencent:registry=https://mirrors.tencent.com/npm/
 ```
 
 The target is a line-oriented `key=value` file such as `.npmrc`. Managed keys
@@ -127,3 +126,19 @@ The source is a partial JSON document:
 
 Objects are merged recursively. Scalar values and arrays are replaced. Fields
 not present in the source partial are left untouched in the target.
+
+### toml driver
+
+The source is a partial TOML document:
+
+```toml
+model = "gpt-6.2-sol"
+
+[features]
+hooks = true
+```
+
+Tables are merged recursively while preserving unmanaged keys, sections, and
+comments in the target. Scalar values and arrays are replaced. `lkdots capture`
+updates only the keys declared in the source partial while preserving comments
+and structure in the source file.

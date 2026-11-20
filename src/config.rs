@@ -56,6 +56,7 @@ pub struct ConfigFileEntry {
 pub enum ProjectionDriver {
     Properties,
     Json,
+    Toml,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
